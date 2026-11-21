@@ -77,6 +77,15 @@ function page(path, fetch, stored = new Map()) {
 }
 
 for (const path of ['../index.html', '../public/index.html']) {
+  test(`${path}: the setup presents the intention, ruler, and direct controls`, () => {
+    const html = readFileSync(new URL(path, import.meta.url), 'utf8');
+    assert.match(html, /for="intentionInput"/);
+    assert.match(html, /id="durationSlider"[^>]+min="1"[^>]+max="60"/);
+    for (const retired of ['studioFooterSummary', 'reviewScriptBtn', 'studioConnectionStatus', 'Studio Voice Ready', 'full narration is ready']) {
+      assert.ok(!html.includes(retired), retired);
+    }
+  });
+
   test(`${path}: sparse and spacious sessions never stretch a pause beyond one minute`, () => {
     const p = page(path, async () => {});
     for (const mode of ['natural','every','minimal']) {
@@ -422,7 +431,7 @@ for (const path of ['../index.html', '../public/index.html']) {
     await p.run('toggleVoicePreview("julian")');
     assert.equal(p.run('state.voiceId'), 'julian');
     assert.equal(requests[0].voiceName, 'Algieba');
-    assert.match(p.elements.get('studioFooterSummary').textContent, /Julian/);
+    assert.match(p.elements.get('setupVoiceValue').textContent, /Julian/);
   });
 
   test(`${path}: a late preview cannot replace the most recently chosen voice`, async () => {
@@ -497,7 +506,7 @@ for (const path of ['../index.html', '../public/index.html']) {
     assert.equal(JSON.stringify(voice).includes('stale-personal-secret'), false);
     assert.equal(p.elements.get('voicePlayer').src, 'data:audio/wav;base64,AAAA');
     const before = requests.length;
-    await p.elements.get('testStudioVoiceBtn').listeners.click();
+    await p.run('toggleVoicePreview("clara")');
     assert.equal(requests.length, before + 1);
     assert.equal(requests.at(-1).url, '/api/tts');
   });
