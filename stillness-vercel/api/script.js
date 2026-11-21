@@ -1,4 +1,5 @@
 import { buildPersonalScriptRequest, parsePersonalScript, validatePersonalScriptRequest } from '../lib/personal-script.js';
+import { respondToProviderRateLimit } from '../lib/provider-errors.js';
 
 const unavailable = 'Studio service is temporarily unavailable. Please try again shortly.';
 
@@ -42,6 +43,9 @@ export default async function handler(req, res) {
           },
           body: JSON.stringify(payload)
         });
+        if (resp.status === 429) {
+          return await respondToProviderRateLimit(resp, res, { model, service: 'script' });
+        }
         if (!resp.ok) {
           if (structured && attempt === 0 && resp.status === 400) {
             const data = await resp.json().catch(() => ({}));

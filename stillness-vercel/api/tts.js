@@ -1,3 +1,5 @@
+import { respondToProviderRateLimit } from '../lib/provider-errors.js';
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -41,7 +43,11 @@ export default async function handler(req, res) {
           }
         })
       });
+      if (resp.status === 429) {
+        return await respondToProviderRateLimit(resp, res, { model, service: 'voice' });
+      }
       if (!resp.ok) {
+        console.warn({ event: 'voice_generation_failed', model, status: resp.status });
         const errData = await resp.json().catch(() => ({}));
         lastErr = `${model}: HTTP ${resp.status} ${errData?.error?.message || ''}`.trim();
         continue;
@@ -58,6 +64,7 @@ export default async function handler(req, res) {
       }
       lastErr = `${model}: returned no audio`;
     } catch (e) {
+      console.warn({ event: 'voice_generation_failed', model, failure: e.name || 'Error' });
       lastErr = `${model}: ${e.message}`;
     }
   }

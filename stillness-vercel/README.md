@@ -25,3 +25,9 @@ Review Script automatically composes from the full personal note. The server kee
 After finishing or ending a session, choose **Save Session**. **Library** lets you read, replay, or delete saved practices. The exact script and the final voice, pause, and sound settings are stored in this browser on this device. Audio is generated again on replay; saved practices are not audio recordings and do not sync across devices. Clearing browser storage removes the library.
 
 Previewing a voice also selects it for the session. Switching previews cancels older requests, and studio failures are shown rather than silently substituting the same browser voice.
+
+## Audio reliability
+
+Background recordings are served from `public/audio` with [recording credits](public/audio/credits.md), so playback does not depend on another media host's rate limits. Phone-blocked narration is retained for **Resume Audio**; the session clock waits for narration and stops during audio failures. Long chapters are spoken in smaller sequential pieces without changing the script.
+
+Google usage limits return HTTP 429 with a specific voice or script code and `Retry-After`, without trying every model again. Server diagnostics include status and model only, never personal notes or credentials.

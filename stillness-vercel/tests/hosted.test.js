@@ -77,6 +77,106 @@ function page(path, fetch, stored = new Map()) {
 }
 
 for (const path of ['../index.html', '../public/index.html']) {
+  test(`${path}: a phone interruption pauses progress and offers audio recovery`, () => {
+    const p = page(path, async () => {});
+    p.run(`state.session.active=true; state.session.phase='speaking'; voicePlayer.paused=true; voicePlayer.ended=false;`);
+    p.elements.get('voicePlayer').listeners.pause?.();
+    assert.equal(p.run('state.session.phase'), 'audio-blocked');
+  });
+
+  test(`${path}: long narration is requested in bounded pieces without losing any words`, async () => {
+    const requested = [];
+    const p = page(path, async (url, options) => {
+      requested.push(JSON.parse(options.body).text);
+      return new Response(JSON.stringify({data:'AAAA',mimeType:'audio/wav'}));
+    });
+    const text = Array(20).fill('Let Jordan and the garden project wait as you notice this gentle breath.').join(' ');
+    p.run('var narrationDone = 0');
+    await p.run(`speakWithGeminiTTS(${JSON.stringify(text)}, VOICES[0], () => narrationDone++)`);
+    for (let i=0; i<20 && p.run('narrationDone')===0; i++) {
+      p.elements.get('voicePlayer').onended();
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    assert.ok(requested.length > 1);
+    assert.ok(requested.every(part => part.length <= 500));
+    assert.equal(requested.join(' '), text);
+    assert.equal(p.run('narrationDone'), 1);
+  });
+
+  test(`${path}: the session clock waits for voice playback and freezes on an audio failure`, async () => {
+    const p = page(path, async () => {});
+    p.run(`var tick; setInterval = fn => {tick=fn;return 1}; state.sounds.forEach(sound=>sound.enabled=false);`);
+    await p.run('startSession()');
+    p.run(`state.session.phase='loading-voice'; tick(); state.session.phase='audio-error'; tick();`);
+    assert.equal(p.run('state.session.elapsedSec'), 0);
+    p.run(`state.session.phase='speaking'; tick();`);
+    assert.equal(p.run('state.session.elapsedSec'), 1);
+  });
+
+  test(`${path}: an old play promise cannot mark a newer session as speaking`, async () => {
+    const p = page(path, async () => {});
+    p.run(`state.session.active = true; state.session.phase = 'loading-voice';
+      var resolvePlay; voicePlayer.play = () => new Promise(done => {resolvePlay=done;});`);
+    const old = p.run('playInlineAudioData({data:"AAAA",mimeType:"audio/wav"},()=>{})');
+    p.run('stopVoicePlayback(); state.session.phase = "loading-voice"; resolvePlay()');
+    await old;
+    assert.equal(p.run('state.session.phase'), 'loading-voice');
+  });
+
+  test(`${path}: stopping audio also cancels a queued retry waiting for background playback`, async () => {
+    const p = page(path, async () => {});
+    p.run(`var resolveBackground; var retries = 0;
+      soundElements.ocean = {play:() => new Promise(done => {resolveBackground=done;})};
+      pendingVoiceAction = () => retries++;`);
+    const retry = p.run('resumeSessionAudio()');
+    p.run('stopVoicePlayback(); resolveBackground()');
+    await retry;
+    assert.equal(p.run('retries'), 0);
+  });
+
+  test(`${path}: audio arriving while paused starts when the user resumes`, async () => {
+    const p = page(path, async () => {});
+    p.run(`state.session.active = true; state.session.paused = true; state.session.phase = 'loading-voice';`);
+    await p.run('playInlineAudioData({data:"AAAA",mimeType:"audio/wav"},()=>{})');
+    p.run('toggleSessionPause()');
+    await Promise.resolve(); await Promise.resolve();
+    assert.equal(p.run('state.session.phase'), 'speaking');
+  });
+
+  test(`${path}: phone autoplay blocking retains narration and resumes it on a tap`, async () => {
+    const p = page(path, async () => {});
+    p.run(`state.session.active = true; state.session.phase = 'loading';
+      var attempts = 0; var spokenDone = 0;
+      voicePlayer.play = async () => { if (++attempts === 1) throw Object.assign(new Error('gesture required'), {name:'NotAllowedError'}); };`);
+    const retained = await p.run('playInlineAudioData({data:"AAAA",mimeType:"audio/wav"}, () => spokenDone++)');
+    assert.equal(retained, true);
+    assert.equal(p.run('state.session.phase'), 'audio-blocked');
+    assert.equal(p.run('spokenDone'), 0);
+    await p.run('resumeSessionAudio()');
+    assert.equal(p.run('state.session.phase'), 'speaking');
+    assert.equal(p.elements.get('voicePlayer').src, 'data:audio/wav;base64,AAAA');
+  });
+
+  test(`${path}: a voice service failure waits for retry rather than silently advancing the session`, async () => {
+    const p = page(path, async () => new Response(JSON.stringify({error:'Voice usage limit reached',code:'VOICE_RATE_LIMITED',retryAfterSeconds:30}),{status:429}));
+    p.run(`state.session.active = true; state.session.chapters = [{text:'Breathe.',title:'Opening',roleTag:'Opening'}];`);
+    await p.run('playCurrentChapter()');
+    assert.equal(p.run('state.session.phase'), 'audio-error');
+    assert.equal(p.run('state.session.chapterIndex'), 0);
+    assert.equal(p.run('Boolean(readingPaceCallback)'), false);
+  });
+
+  test(`${path}: delayed silent priming cannot pause narration that has already started`, async () => {
+    const p = page(path, async () => {});
+    p.run(`var resolvePrime; var pauses = 0; var calls = 0;
+      voicePlayer.pause = () => pauses++;
+      voicePlayer.play = () => ++calls === 1 ? new Promise(done => {resolvePrime=done}) : Promise.resolve();
+      primeVoicePlayback();`);
+    await p.run('playInlineAudioData({data:"AAAA",mimeType:"audio/wav"}, () => {})');
+    p.run('resolvePrime()'); await Promise.resolve();
+    assert.equal(p.run('pauses'), 0);
+  });
+
   test(`${path}: changing script detail requests a fresh script at the chosen level`, async () => {
     const levels = [];
     const p = page(path, async (url, options) => {
