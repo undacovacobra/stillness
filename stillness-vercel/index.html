@@ -609,11 +609,26 @@
 
     const voicePlayer = document.getElementById('voicePlayer');
     voicePlayer.addEventListener('pause', () => {
-      if (!state.session.active || state.session.paused || state.session.phase !== 'speaking' || voicePlayer.ended || !voicePlayer.paused) return;
+      if (!state.session.active || state.session.paused || !['speaking', 'buffering-voice'].includes(state.session.phase) || voicePlayer.ended || !voicePlayer.paused) return;
       voiceNeedsGesture = true;
       state.session.phase = 'audio-blocked';
       setOrbState('listen', 'Audio Paused', formatTime(state.session.elapsedSec), 'Tap Resume Audio above');
-      showAudioRecovery('Your phone interrupted playback. Tap Resume Audio to continue from here.');
+      if (state.session.narrationReady) {
+        recoverPreparedPlayback();
+      } else {
+        showAudioRecovery('Playback was interrupted. Tap Resume Audio to continue from here.');
+      }
+    });
+    voicePlayer.addEventListener('waiting', () => {
+      const session = state.session;
+      if (session.narrationReady && session.active && !session.paused && session.phase === 'speaking') {
+        session.phase = 'buffering-voice';
+        setOrbState('listen', 'Buffering Voice', formatTime(session.elapsedSec), 'Resuming from the same spot');
+      }
+    });
+    voicePlayer.addEventListener('playing', () => {
+      const session = state.session;
+      if (session.narrationReady && session.active && !session.paused && session.phase === 'buffering-voice') markVoicePlaying();
     });
 
     function refreshBrowserVoices() {
@@ -1488,6 +1503,40 @@
     let voiceNeedsGesture = false;
     let pendingVoiceAction = null;
     let voiceRetryAt = 0;
+    let releaseVoiceClip = null;
+    let attemptedClipRecovery = false;
+
+    function voiceRetryMessage() {
+      if (Date.now() >= voiceRetryAt) return lastTTSErrorDetail;
+      const retryTime = new Date(voiceRetryAt).toLocaleString([], {
+        weekday: 'short', hour: 'numeric', minute: '2-digit'
+      });
+      return `Studio voice is at its usage limit. Try again after ${retryTime}.`;
+    }
+
+    function resumeLoadedVoice(run) {
+      const source = voicePlayer.src;
+      return voicePlayer.play().then(() => {
+        if (run === voicePlaybackRun && voicePlayer.src === source && !state.session.paused) markVoicePlaying();
+      });
+    }
+
+    function recoverPreparedPlayback() {
+      const run = voicePlaybackRun;
+      if (!attemptedClipRecovery && !state.session.paused) {
+        attemptedClipRecovery = true;
+        resumeLoadedVoice(run).catch(() => {
+          if (run === voicePlaybackRun) showPreparedAudioRecovery();
+        });
+        return;
+      }
+      showPreparedAudioRecovery();
+    }
+
+    function showPreparedAudioRecovery() {
+      document.getElementById('playPauseBtn').textContent = 'Resume Audio';
+      showAudioRecovery('Playback is paused. Tap Resume Audio to continue with the same voice.');
+    }
 
     function showAudioRecovery(message) {
       document.getElementById('audioRecoveryMessage').textContent = message;
@@ -1515,6 +1564,7 @@
       document.getElementById('audioRecoveryNotice').classList.add('hidden');
       if (state.session.active && !state.session.paused) {
         state.session.phase = 'speaking';
+        document.getElementById('playPauseBtn').textContent = 'Pause';
         const chapter = state.session.chapters[state.session.chapterIndex];
         setOrbState('listen', 'Listening', formatTime(state.session.elapsedSec), chapter?.title || 'Your practice');
       }
@@ -1522,22 +1572,25 @@
 
     async function resumeSessionAudio() {
       const run = voicePlaybackRun;
-      if (Date.now() < voiceRetryAt) {
-        showAudioRecovery('The voice service has reached a usage limit. Please try again later.');
+      if (Date.now() < voiceRetryAt && pendingVoiceAction && !state.session.narrationReady) {
+        showAudioRecovery(voiceRetryMessage());
         return;
       }
       const jobs = [];
       if (window.StillnessAudio?.supported) jobs.push(window.StillnessAudio.unlock());
       if (voiceNeedsGesture) {
         // Start play synchronously in the tap handler, using the audio already downloaded.
-        jobs.push(voicePlayer.play().then(() => { if (run === voicePlaybackRun) markVoicePlaying(); }));
+        jobs.push(resumeLoadedVoice(run));
       }
       for (const sound of state.sounds.filter(sound => sound.enabled)) {
         const element = soundElements[sound.id];
         if (element) jobs.push(element.play());
       }
       const retry = pendingVoiceAction;
-      if (retry) { pendingVoiceAction = null; primeVoicePlayback(); }
+      if (retry) {
+        pendingVoiceAction = null;
+        primeVoicePlayback();
+      }
       const results = await Promise.allSettled(jobs);
       if (run !== voicePlaybackRun) return;
       if (results.some(result => result.status === 'rejected')) {
@@ -1548,17 +1601,22 @@
       if (retry) await retry();
     }
 
-    async function playInlineAudioData(inlineData, onDone) {
+    async function playInlineAudioData(inlineData, onDone, onFailure) {
       const run = voicePlaybackRun;
       const mime = (inlineData.mimeType || '').toLowerCase();
       let url = '';
-      if (mime.includes('wav') || mime.includes('mpeg') || mime.includes('mp3') || mime.includes('ogg')) {
+      if (inlineData.blob) {
+        url = URL.createObjectURL(inlineData.blob);
+      } else if (mime.includes('wav') || mime.includes('mpeg') || mime.includes('mp3') || mime.includes('ogg')) {
         url = `data:${inlineData.mimeType};base64,${inlineData.data}`;
       } else {
         const rateMatch = mime.match(/rate=(\d+)/);
         const rate = rateMatch ? Number(rateMatch[1]) : 24000;
         url = pcmBase64ToWavUrl(inlineData.data, rate);
       }
+      releaseVoiceClip?.();
+      releaseVoiceClip = url.startsWith('blob:') ? () => URL.revokeObjectURL(url) : null;
+      attemptedClipRecovery = false;
       let settled = false;
       const finishVoice = () => {
         if (run !== voicePlaybackRun) return;
@@ -1566,12 +1624,15 @@
         settled = true;
         voicePlayer.onended = null;
         voicePlayer.onerror = null;
-        if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+        releaseVoiceClip?.();
+        releaseVoiceClip = null;
         onDone();
       };
       voicePlayer.onended = finishVoice;
       voicePlayer.onerror = () => {
-        if (run !== voicePlaybackRun) return;
+        if (run !== voicePlaybackRun || settled) return;
+        settled = true;
+        if (onFailure) { onFailure(); return; }
         if (state.session.active) {
           state.session.phase = 'audio-error';
           pendingVoiceAction = playCurrentChapter;
@@ -1583,23 +1644,23 @@
       if (state.session.active && state.session.paused) { voiceNeedsGesture = true; return true; }
       try {
         await voicePlayer.play();
-        if (run !== voicePlaybackRun) return false;
+        if (run !== voicePlaybackRun || settled) return false;
         markVoicePlaying();
       } catch (error) {
-        if (run !== voicePlaybackRun) return false;
+        if (run !== voicePlaybackRun || settled) return false;
         if (error.name !== 'NotAllowedError') throw error;
         voiceNeedsGesture = true;
         if (state.session.active) {
           state.session.phase = 'audio-blocked';
           setOrbState('listen', 'Audio Paused', formatTime(state.session.elapsedSec), 'Tap Resume Audio above');
         }
-        showAudioRecovery('Your phone paused audio after loading. Tap Resume Audio to play the voice and soundscape.');
+        if (state.session.narrationReady) showPreparedAudioRecovery();
+        else showAudioRecovery('Tap Resume Audio to allow playback.');
       }
       return true;
     }
 
-    async function speakWithGeminiTTS(text, voiceObj, onDone) {
-      const run = voicePlaybackRun;
+    function narrationPieces(text) {
       const pieces = [];
       let piece = '';
       for (const word of text.trim().split(/\s+/)) {
@@ -1607,6 +1668,12 @@
         piece += (piece ? ' ' : '') + word;
       }
       if (piece) pieces.push(piece);
+      return pieces;
+    }
+
+    async function speakWithGeminiTTS(text, voiceObj, onDone) {
+      const run = voicePlaybackRun;
+      const pieces = narrationPieces(text);
       if (!pieces.length) return false;
       let index = 0;
       const next = async () => {
@@ -1920,6 +1987,8 @@
       voicePlayer.pause();
       voicePlayer.onended = null;
       voicePlayer.onerror = null;
+      releaseVoiceClip?.();
+      releaseVoiceClip = null;
       cancelBrowserSpeechQueue();
       state.previewingVoiceId = null;
     }
@@ -2127,6 +2196,7 @@
         active: true,
         paused: false,
         settings: captureSessionSettings(),
+        studioNarration: Boolean(state.serverHostedKey),
         chapters: plan.chapters,
         chapterIndex: 0,
         phase: 'fadein',
@@ -2139,6 +2209,7 @@
 
       switchView('player');
       renderPlayerStatic();
+      document.getElementById('skipChapterBtn').disabled = true;
       renderLiveMixer();
       updateProgressUI();
 
@@ -2163,28 +2234,172 @@
         updateProgressUI();
       }, 1000);
 
+      if (state.session.studioNarration) {
+        await prepareSessionNarration(state.session);
+      } else {
+        scheduleSessionStart(state.session, 2800);
+      }
+    }
+
+    function scheduleSessionStart(session, delay = 0) {
+      if (!session.active || session !== state.session || session.paused) return;
+      document.getElementById('skipChapterBtn').disabled = false;
+      if (fadeinTimeout) clearTimeout(fadeinTimeout);
       fadeinTimeout = setTimeout(() => {
-        if (!state.session.active) return;
-        playCurrentChapter();
-      }, 2800);
+        fadeinTimeout = null;
+        if (session === state.session && session.active && !session.paused &&
+            ['fadein', 'ready-voice'].includes(session.phase)) playCurrentChapter();
+      }, delay);
+    }
+
+    async function requestPreparedClip(text, voice, model, controller) {
+      const body = { text, voiceName: voice.geminiVoice, style: voice.geminiStyle, model };
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const request = new AbortController();
+        const cancel = () => request.abort();
+        controller.signal.addEventListener('abort', cancel, { once: true });
+        const timeout = setTimeout(cancel, 45_000);
+        try {
+          const response = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: request.signal
+          });
+          if (controller.signal.aborted) return null;
+          if (response.status === 429) {
+            const quota = await response.json().catch(() => ({}));
+            if (controller.signal.aborted) return null;
+            voiceRetryAt = Date.now() + (Number(quota.retryAfterSeconds) || 60) * 1000;
+            return null;
+          }
+          if (response.ok) {
+            const audio = await response.json();
+            if (audio.data && (!model || audio.model === model)) return audio;
+          } else if (response.status < 500 && response.status !== 408) {
+            return null;
+          }
+        } catch (error) {
+          if (controller.signal.aborted) return null;
+        } finally {
+          clearTimeout(timeout);
+          controller.signal.removeEventListener('abort', cancel);
+        }
+      }
+      return null;
+    }
+
+    function prepareClipData(audio) {
+      // Store complete formats as binary blobs to avoid keeping large base64 strings in memory.
+      const type = audio.mimeType || 'audio/L16;rate=24000';
+      if (!/wav|mpeg|mp3|ogg/i.test(type)) return audio;
+      const bytes = Uint8Array.from(atob(audio.data), character => character.charCodeAt(0));
+      return { blob: new Blob([bytes], { type }), mimeType: type };
+    }
+
+    async function prepareSessionNarration(session) {
+      const voice = VOICES.find(item => item.id === session.settings.voiceId) || VOICES[0];
+      const plan = session.narrationPlan ??= session.chapters.map(chapter => narrationPieces(chapter.text));
+      const clips = session.narrationClips ??= plan.map(() => []);
+      const run = voicePlaybackRun;
+      const controller = new AbortController();
+      voiceRequestController = controller;
+      session.phase = 'preparing-voice';
+      document.getElementById('audioRecoveryNotice').classList.add('hidden');
+      document.getElementById('playPauseBtn').textContent = session.paused ? 'Resume' : 'Pause';
+
+      try {
+        for (let chapterIndex = 0; chapterIndex < plan.length; chapterIndex += 1) {
+          const chapterClips = clips[chapterIndex];
+          for (let piece = chapterClips.length; piece < plan[chapterIndex].length; piece += 1) {
+            setOrbState('listen', 'Preparing Voice', '0:00', `Section ${chapterIndex + 1} of ${plan.length}`);
+            document.getElementById('playerScriptText').textContent = 'Your meditation will begin when the full narration is ready.';
+            let audio;
+            try {
+              if (Date.now() >= voiceRetryAt) {
+                audio = await requestPreparedClip(plan[chapterIndex][piece], voice, session.narrationModel, controller);
+              }
+              if (audio?.model && run === voicePlaybackRun && session === state.session) {
+                chapterClips.push(prepareClipData(audio));
+                session.narrationModel ??= audio.model;
+                continue;
+              }
+            } catch (error) {
+              // Treat malformed provider audio as an unavailable clip.
+            }
+            if (!session.active || run !== voicePlaybackRun || session !== state.session) return;
+            session.phase = 'audio-error';
+            pendingVoiceAction = () => prepareSessionNarration(session);
+            setOrbState('listen', 'Voice Unavailable', '0:00', 'Your meditation is ready to retry');
+            document.getElementById('playPauseBtn').textContent = 'Resume Audio';
+            showAudioRecovery(Date.now() < voiceRetryAt
+              ? voiceRetryMessage()
+              : 'Studio narration could not be prepared. Tap Resume Audio to retry with the same voice.');
+            return;
+          }
+        }
+        session.narrationReady = true;
+        session.phase = 'ready-voice';
+        scheduleSessionStart(session);
+      } finally {
+        if (voiceRequestController === controller) voiceRequestController = null;
+      }
+    }
+
+    async function playPreparedChapter(session, onDone) {
+      const clips = session.narrationClips[session.chapterIndex];
+      const run = voicePlaybackRun;
+      let index = 0;
+      let retryUsed = false;
+      let playAttempt = 0;
+      const next = async () => {
+        if (run !== voicePlaybackRun || session !== state.session || !session.active) return;
+        if (index === clips.length) { onDone(); return; }
+        const currentIndex = index;
+        const attempt = ++playAttempt;
+        const failed = () => {
+          if (run !== voicePlaybackRun || attempt !== playAttempt || !session.active) return;
+          if (!retryUsed && !session.paused) {
+            retryUsed = true;
+            next();
+            return;
+          }
+          session.phase = 'audio-error';
+          pendingVoiceAction = next;
+          showPreparedAudioRecovery();
+        };
+        try {
+          await playInlineAudioData(clips[currentIndex], () => {
+            if (attempt !== playAttempt) return;
+            index += 1;
+            retryUsed = false;
+            next();
+          }, failed);
+        } catch (error) {
+          failed();
+        }
+      };
+      await next();
     }
 
     async function playCurrentChapter() {
       if (!state.session.active) return;
+      if (state.session.studioNarration && !state.session.narrationReady) return;
       const ch = state.session.chapters[state.session.chapterIndex];
       if (!ch) {
         finishSession();
         return;
       }
 
-      const voiceObj = VOICES.find(v => v.id === state.voiceId) || VOICES[0];
-      state.session.phase = state.serverHostedKey ? 'loading-voice' : 'speaking';
+      const voiceId = state.session.settings?.voiceId || state.voiceId;
+      const voiceObj = VOICES.find(v => v.id === voiceId) || VOICES[0];
+      state.session.phase = state.session.narrationReady ? 'loading-voice' : 'speaking';
       document.getElementById('pauseActionRow').classList.add('hidden');
       document.getElementById('playerChapterCounter').textContent = `Chapter ${state.session.chapterIndex + 1} of ${state.session.chapters.length}`;
       document.getElementById('playerChapterTitle').textContent = `${ch.roleTag} · ${ch.title}`;
       document.getElementById('playerScriptText').textContent = ch.text;
       const vPill = document.getElementById('playerVoiceSourcePill'); if (vPill) vPill.classList.add('hidden');
-      setOrbState('listen', state.serverHostedKey ? 'Loading Voice' : 'Listening', formatTime(state.session.elapsedSec), ch.title);
+      setOrbState('listen', 'Listening', formatTime(state.session.elapsedSec), ch.title);
 
       const onSpokenDone = () => {
         if (!state.session.active) return;
@@ -2198,19 +2413,11 @@
         startReadingPaceFallback(ch.text, onSpokenDone, false);
       };
 
-      // Exact Custom Script ONLY (never plays mismatched pre-recorded tracks):
-      // Hosted Studio Voice -> Natural Browser Speech -> Calm On-Screen Pacing
-      if (state.serverHostedKey) {
-        const run = voicePlaybackRun;
-        const okGemini = await speakWithGeminiTTS(ch.text, voiceObj, onSpokenDone);
-        if (!state.session.active || run !== voicePlaybackRun) return;
-        if (okGemini) return;
-        state.session.phase = 'audio-error';
-        pendingVoiceAction = playCurrentChapter;
-        setOrbState('listen', 'Voice Paused', formatTime(state.session.elapsedSec), 'Tap Resume Audio above');
-        showAudioRecovery(lastTTSErrorDetail || `${voiceObj.name} is temporarily unavailable. Tap Resume Audio to retry.`);
+      if (state.session.narrationReady) {
+        await playPreparedChapter(state.session, onSpokenDone);
         return;
       }
+
       const okBrowser = speakWithBrowserNaturalVoice(ch.text, voiceObj, onSpokenDone, handleNoLocalVoice);
       if (okBrowser) return;
       handleNoLocalVoice();
@@ -2271,6 +2478,7 @@
     }
 
     function advanceToNextChapter() {
+      if (!state.session.active || (state.session.studioNarration && !state.session.narrationReady)) return;
       if (pauseTimer) { clearInterval(pauseTimer); pauseTimer = null; }
       stopVoicePlayback();
       state.session.chapterIndex += 1;
@@ -2282,11 +2490,16 @@
     }
 
     function finishSession() {
-      state.session.settings = { ...(state.session.settings || captureSessionSettings()), voiceId: state.voiceId, voiceVolume: state.voiceVolume, pausePace: state.pausePace, sounds: JSON.parse(JSON.stringify(state.sounds)) };
+      const settings = state.session.settings || captureSessionSettings();
+      const voiceId = state.session.studioNarration ? settings.voiceId : state.voiceId;
+      state.session.settings = { ...settings, voiceId, voiceVolume: state.voiceVolume, pausePace: state.pausePace, sounds: JSON.parse(JSON.stringify(state.sounds)) };
       clearSessionTimers();
       stopVoicePlayback();
       state.session.phase = 'done';
       state.session.active = false;
+      state.session.narrationClips = null;
+      state.session.narrationPlan = null;
+      state.session.narrationReady = false;
       document.getElementById('pauseActionRow').classList.add('hidden');
       document.getElementById('sessionProgressBar').style.width = '100%';
       setOrbState('listen', 'Complete', formatTime(state.session.elapsedSec), 'Take your time returning');
@@ -2307,6 +2520,10 @@
         return;
       }
       if (!state.session.active) return;
+      if (!state.session.paused && ['audio-blocked', 'audio-error'].includes(state.session.phase)) {
+        resumeSessionAudio();
+        return;
+      }
       state.session.paused = !state.session.paused;
       if (state.session.paused) {
         voicePlayer.pause();
@@ -2327,9 +2544,11 @@
           const el = soundElements[s.id];
           if (el) el.play().catch(() => {});
         });
-        if (voiceNeedsGesture || state.session.phase === 'audio-blocked' || state.session.phase === 'audio-error') {
+        if (['ready-voice', 'fadein'].includes(state.session.phase)) {
+          if (!state.session.studioNarration || state.session.narrationReady) scheduleSessionStart(state.session);
+        } else if (voiceNeedsGesture || state.session.phase === 'audio-blocked' || state.session.phase === 'audio-error') {
           resumeSessionAudio();
-        } else if (state.session.phase === 'speaking') {
+        } else if (['speaking', 'buffering-voice'].includes(state.session.phase)) {
           if (readingPaceCallback && readingPaceRemainingMs > 0) {
             const cb = readingPaceCallback;
             readingPaceStartTs = Date.now();
@@ -2342,7 +2561,13 @@
           } else if (activeUtterance && window.speechSynthesis) {
             try { window.speechSynthesis.resume(); } catch (e) {}
           } else {
-            voicePlayer.play().catch(() => {});
+            const run = voicePlaybackRun;
+            resumeLoadedVoice(run).catch(() => {
+              if (run !== voicePlaybackRun) return;
+              voiceNeedsGesture = true;
+              state.session.phase = 'audio-blocked';
+              showPreparedAudioRecovery();
+            });
           }
         }
         document.getElementById('playPauseBtn').textContent = 'Pause';

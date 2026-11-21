@@ -8,12 +8,16 @@ export default async function handler(req, res) {
   if (!apiKey) {
     return res.status(503).json({ error: 'Studio service is temporarily unavailable. Please try again shortly.' });
   }
-  const { text, voiceName, style } = req.body || {};
+  const { text, voiceName, style, model: requestedModel } = req.body || {};
   if (!text || typeof text !== 'string') {
     return res.status(400).json({ error: 'Missing text' });
   }
 
-  const models = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts', 'gemini-2.5-flash-preview-tts'];
+  const supportedModels = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts', 'gemini-2.5-flash-preview-tts'];
+  if (requestedModel !== undefined && !supportedModels.includes(requestedModel)) {
+    return res.status(400).json({ error: 'Unsupported voice model.' });
+  }
+  const models = requestedModel ? [requestedModel] : supportedModels;
   let lastErr = 'No TTS model succeeded';
   for (const model of models) {
     try {

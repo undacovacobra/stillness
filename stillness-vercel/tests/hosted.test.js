@@ -198,13 +198,31 @@ for (const path of ['../index.html', '../public/index.html']) {
     assert.equal(p.elements.get('voicePlayer').src, 'data:audio/wav;base64,AAAA');
   });
 
-  test(`${path}: a voice service failure waits for retry rather than silently advancing the session`, async () => {
-    const p = page(path, async () => new Response(JSON.stringify({error:'Voice usage limit reached',code:'VOICE_RATE_LIMITED',retryAfterSeconds:30}),{status:429}));
-    p.run(`state.session.active = true; state.session.chapters = [{text:'Breathe.',title:'Opening',roleTag:'Opening'}];`);
-    await p.run('playCurrentChapter()');
+  test(`${path}: a rate limit holds the session at the beginning without playing another voice`, async () => {
+    const requests = [];
+    const p = page(path, async (url, options) => {
+      requests.push(JSON.parse(options.body));
+      if (requests.length === 1) return new Response(JSON.stringify({data:'AAAA',mimeType:'audio/wav',model:'gemini-3.8-flash-tts'}));
+      if (requests.length === 2) return new Response(JSON.stringify({code:'VOICE_RATE_LIMITED',retryAfterSeconds:30}), {status:429});
+      return new Response(JSON.stringify({data:'AAAA',mimeType:'audio/wav',model:'gemini-3.8-flash-tts'}));
+    });
+    p.run(`state.session.active = true; state.session.settings = captureSessionSettings();
+      state.session.chapters = [{text:'First.'},{text:'Second.'}];
+      voicePlayer.play = () => {throw new Error('Narration must wait for preparation');};`);
+    await p.run('prepareSessionNarration(state.session)');
     assert.equal(p.run('state.session.phase'), 'audio-error');
+    assert.equal(p.run('state.session.elapsedSec'), 0);
     assert.equal(p.run('state.session.chapterIndex'), 0);
-    assert.equal(p.run('Boolean(readingPaceCallback)'), false);
+    assert.equal(p.run('state.session.narrationClips[0].length'), 1);
+    assert.equal(requests[1].model, 'gemini-3.8-flash-tts');
+    assert.match(p.elements.get('audioRecoveryMessage').textContent, /usage limit.*try again after/i);
+    await p.run('resumeSessionAudio()');
+    assert.equal(requests.length, 2);
+    p.run('voiceRetryAt = 0; state.voiceId = "julian"; voicePlayer.play = async () => {};');
+    await p.run('resumeSessionAudio()');
+    assert.equal(p.run('state.session.narrationReady'), true);
+    assert.deepEqual(requests.map(request => request.text), ['First.', 'Second.', 'Second.']);
+    assert.ok(requests.every(request => request.voiceName === 'Vindemiatrix'));
   });
 
   test(`${path}: delayed silent priming cannot pause narration that has already started`, async () => {
@@ -387,14 +405,45 @@ for (const path of ['../index.html', '../public/index.html']) {
     assert.equal(p.run('state.previewingVoiceId'), 'julian');
   });
 
-  test(`${path}: failed studio audio never substitutes a generic browser voice`, async () => {
-    const p = page(path, async () => new Response(JSON.stringify({ error: 'Voice unavailable' }), { status: 503 }));
-    p.run(`state.session.active = true;
-      state.session.chapters = [{ text: 'Breathe.', title: 'Opening', roleTag: 'Opening' }];
-      var browserCalls = 0;
-      speakWithBrowserNaturalVoice = () => { browserCalls++; return true; };`);
+  test(`${path}: cached studio narration plays through the chapter handoff with the same voice`, async () => {
+    const requests = [];
+    const p = page(path, async (url, options) => {
+      const body = JSON.parse(options.body);
+      requests.push(body);
+      if (requests.length === 2) return new Response('{}', {status:503});
+      return new Response(JSON.stringify({data:'AAAA',mimeType:'audio/wav',model:'gemini-3.8-flash-tts'}));
+    });
+    p.run(`state.session.active = true; state.session.studioNarration = true;
+      state.session.settings = captureSessionSettings();
+      state.session.chapters = [{text:'First.',title:'Opening',pauseSec:5},{text:'Second.',title:'Closing',pauseSec:5}];`);
+    await p.run('prepareSessionNarration(state.session)');
+    assert.equal(p.run('state.session.narrationReady'), true);
+    assert.equal(p.run('state.session.phase'), 'ready-voice');
+    assert.deepEqual(requests.map(r=>r.text), ['First.','Second.','Second.']);
+    assert.equal(requests[1].model, 'gemini-3.8-flash-tts');
+    assert.equal(requests[2].model, 'gemini-3.8-flash-tts');
+    assert.ok(requests.every(r=>r.voiceName === 'Vindemiatrix'));
+
     await p.run('playCurrentChapter()');
-    assert.equal(p.run('browserCalls'), 0);
+    assert.equal(p.run('state.session.phase'), 'speaking');
+    p.elements.get('voicePlayer').onended();
+    assert.equal(p.run('state.session.phase'), 'pausing');
+    p.run('state.voiceId = "julian"; advanceToNextChapter()');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(p.run('state.session.chapterIndex'), 1);
+    assert.equal(p.run('state.session.phase'), 'speaking');
+    assert.equal(requests.length, 3);
+  });
+
+  test(`${path}: a browser interruption automatically resumes the prepared clip`, async () => {
+    const p = page(path, async () => { throw new Error('Playback must use prepared audio'); });
+    p.run(`state.session.active=true; state.session.phase='speaking'; state.session.narrationReady=true;
+      voicePlayer.paused=true; voicePlayer.ended=false; var attempts=0;
+      voicePlayer.play=async () => {attempts++;};`);
+    p.elements.get('voicePlayer').listeners.pause();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(p.run('attempts'), 1);
+    assert.equal(p.run('state.session.phase'), 'speaking');
   });
 
   test(`${path}: a fresh or returning visitor gets hosted voice before the status check finishes`, async () => {

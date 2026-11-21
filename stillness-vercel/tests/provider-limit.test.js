@@ -94,3 +94,22 @@ test('rate-limit responses also work with legacy response helpers without setHea
   assert.equal(res.code, 429);
   assert.equal(res.body.retryAfterSeconds, 12);
 });
+test('a pinned model does not switch providers after a generation failure', async t => {
+  const original = process.env.GEMINI_API_KEY;
+  process.env.GEMINI_API_KEY = 'test-only-key';
+  t.after(() => {
+    if (original === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = original;
+  });
+  const urls = [];
+  t.mock.method(console, 'warn', () => {});
+  t.mock.method(globalThis, 'fetch', async url => {
+    urls.push(url);
+    return new Response('{}', {status:503});
+  });
+  const result = { status(code) { this.code = code; return this; }, json() {} };
+  await tts({ method:'POST', body:{text:'Breathe.', model:'gemini-3.8-flash-lite-tts'} }, result);
+  assert.equal(result.code, 502);
+  assert.equal(urls.length, 1);
+  assert.match(urls[0], /gemini-3\.8-flash-lite-tts:generateContent$/);
+});
