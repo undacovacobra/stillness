@@ -55,7 +55,7 @@ test('the standard key takes precedence and missing configuration stays private'
   const s = response(); status({ method: 'GET' }, s); assert.equal(s.body.configured, false);
 });
 
-function page(path, fetch, stored = new Map()) {
+function page(path, fetch, stored = new Map(), kokoro) {
   const html = readFileSync(new URL(path, import.meta.url), 'utf8');
   const source = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map(m => m[1]).join('\n');
   const elements = new Map();
@@ -68,13 +68,34 @@ function page(path, fetch, stored = new Map()) {
     querySelectorAll() { return []; }, createElement: element, body: element() };
   const storage = { getItem: key => stored.get(key) ?? (key.includes('_key') ? 'stale-personal-secret' : null),
     setItem(key, value) { stored.set(key, value); }, removeItem(key) { stored.delete(key); } };
-  const context = vm.createContext({ document, window: { addEventListener() {}, name: '' },
+  const context = vm.createContext({ document, window: { addEventListener() {}, name: '', StillnessKokoro: kokoro },
     location: { protocol: 'https:', hostname: 'stillness.example' }, localStorage: storage,
     sessionStorage: storage, fetch, setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0,
     clearInterval() {}, URL, Blob, atob, console, AbortController });
   vm.runInContext(source, context);
   return { run: code => vm.runInContext(code, context), elements };
 }
+
+test('Kokoro trial uses the same local voice for previews and complete session narration', async () => {
+  const spoken = [];
+  const p = page('../public/index.html', async () => assert.fail('The trial must not call a speech API'), new Map(), {
+    async render(text) {
+      spoken.push(text);
+      return { mimeType: 'audio/wav', blob: new Blob([text], { type: 'audio/wav' }) };
+    }
+  });
+  assert.equal(p.run('VOICES.map(voice => voice.name).join()'), 'Kokoro Heart');
+  await p.run('toggleVoicePreview(VOICES[0].id)');
+  assert.equal(spoken.length, 1);
+  assert.match(spoken[0], /gentle breath/i);
+  p.run(`stopVoicePlayback(); state.session = { active: true, paused: false,
+    chapters: [{ text: 'Notice your shoulders.' }, { text: 'Let your breathing settle.' }],
+    settings: { voiceId: VOICES[0].id } };`);
+  await p.run('prepareSessionNarration(state.session)');
+  assert.equal(p.run('state.session.narrationReady'), true);
+  assert.equal(p.run('state.session.narrationClips.length'), 2);
+  assert.deepEqual(spoken.slice(1), ['Notice your shoulders.', 'Let your breathing settle.']);
+});
 
 for (const path of ['../index.html', '../public/index.html']) {
   test(`${path}: sparse and spacious sessions never stretch a pause beyond one minute`, () => {
