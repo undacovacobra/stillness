@@ -2,9 +2,9 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = (process.env.GEMINI_API_KEY || process.env.api_key_google || '').trim();
   if (!apiKey) {
-    return res.status(500).json({ error: 'GEMINI_API_KEY is not set in Vercel Environment Variables.' });
+    return res.status(503).json({ error: 'Studio service is temporarily unavailable. Please try again shortly.' });
   }
   const { prompt } = req.body || {};
   if (!prompt || typeof prompt !== 'string') {
@@ -17,6 +17,7 @@ export default async function handler(req, res) {
     try {
       const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: 'POST',
+        signal: AbortSignal.timeout(25000),
         headers: {
           'Content-Type': 'application/json',
           'x-goog-api-key': apiKey
@@ -37,5 +38,5 @@ export default async function handler(req, res) {
       lastErr = `${model}: ${e.message}`;
     }
   }
-  return res.status(502).json({ error: lastErr });
+  return res.status(502).json({ error: 'Studio service is temporarily unavailable. Please try again shortly.' });
 }

@@ -241,11 +241,11 @@
               </div>
               <p id="voiceModeHint" class="text-[11px] text-slate-400">Always speaks your exact personalized script word-for-word—never a generic pre-recorded track.</p>
             </div>
-            <button id="openSettingsFromVoiceBtn" type="button" class="px-3 py-1.5 rounded-full text-xs font-medium border border-slate-700 bg-slate-900/80 hover:border-emerald-300/45 text-slate-200 transition shrink-0">Studio Voice Key</button>
+            <button id="openSettingsFromVoiceBtn" type="button" class="px-3 py-1.5 rounded-full text-xs font-medium border border-slate-700 bg-slate-900/80 hover:border-emerald-300/45 text-slate-200 transition shrink-0">Studio Voice</button>
           </div>
           <div id="mobileSpeechNotice" class="hidden rounded-lg bg-amber-400/10 border border-amber-300/25 px-3 py-2 text-[11px] text-amber-100/90 flex flex-wrap items-center justify-between gap-2">
-            <span>This in-app viewer blocks built-in browser speech. Add a free Gemini or OpenAI API key for warm custom studio voice right here, or open this file in Chrome/Safari.</span>
-            <button id="openSettingsFromNoticeBtn" type="button" class="px-2.5 py-1 rounded-full bg-amber-300/20 hover:bg-amber-300/30 border border-amber-300/40 text-amber-100 font-medium shrink-0">Add API Key</button>
+            <span>Studio voices connect automatically. If audio is unavailable, check your connection and try again.</span>
+            <button id="openSettingsFromNoticeBtn" type="button" class="px-2.5 py-1 rounded-full bg-amber-300/20 hover:bg-amber-300/30 border border-amber-300/40 text-amber-100 font-medium shrink-0">Voice Status</button>
           </div>
         </div>
 
@@ -332,7 +332,7 @@
         <div class="max-w-2xl space-y-2 min-h-[96px]">
           <div class="flex flex-wrap items-center justify-center gap-2">
             <p id="playerChapterTitle" class="text-xs uppercase tracking-[0.15em] text-emerald-300/80">Opening</p>
-            <button id="playerVoiceSourcePill" type="button" class="hidden text-[10px] px-2.5 py-0.5 rounded-full bg-amber-400/15 border border-amber-300/35 text-amber-200 hover:bg-amber-400/25 transition">🔇 Tap to add free Gemini key for Studio Voice</button>
+            <button id="playerVoiceSourcePill" type="button" class="hidden text-[10px] px-2.5 py-0.5 rounded-full bg-amber-400/15 border border-amber-300/35 text-amber-200 hover:bg-amber-400/25 transition">🔇 Studio voice unavailable · Check connection</button>
           </div>
           <p id="playerScriptText" class="font-serif-calm text-xl sm:text-2xl leading-relaxed text-slate-100">Take a quiet moment as the soundscape gently fades in...</p>
         </div>
@@ -387,33 +387,15 @@
     </section>
   </main>
 
-  <!-- Optional AI Script & Studio Voice Settings Modal -->
+  <!-- Studio Voice Connection -->
   <div id="settingsModal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="glass-card rounded-2xl max-w-md w-full p-6 space-y-4">
       <div class="flex items-center justify-between">
-        <h3 class="font-serif-calm text-2xl text-slate-100">AI Script &amp; Studio Voice</h3>
-        <button id="closeSettingsBtn" type="button" class="text-slate-400 hover:text-white text-lg">✕</button>
+        <h3 class="font-serif-calm text-2xl text-slate-100">Studio Voice</h3>
+        <button id="closeSettingsBtn" type="button" class="text-slate-400 hover:text-white text-lg" aria-label="Close voice settings">✕</button>
       </div>
-      <p class="text-xs text-slate-400 leading-relaxed">Add a free <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" class="underline text-emerald-300 hover:text-emerald-200 font-medium">Google AI Studio Gemini key</a> (or OpenAI key) so Stillness writes a 100% custom meditation and speaks every word aloud in crisp studio quality matching the previews. Stored only on your device.</p>
-      <div class="space-y-2">
-        <label for="geminiKeyInput" class="block text-xs text-slate-300">Google Gemini API Key (optional, for bespoke AI scripts &amp; Gemini Studio Voice)</label>
-        <input id="geminiKeyInput" type="password" placeholder="AQ... or AIza..." class="w-full rounded-xl bg-slate-950/75 border border-slate-700 px-3.5 py-2.5 text-sm text-slate-100 outline-none focus:border-emerald-400/60" />
-      </div>
-      <div class="space-y-2">
-        <label for="apiKeyInput" class="block text-xs text-slate-300">OpenAI API Key (optional, for bespoke AI scripts &amp; Studio TTS)</label>
-        <input id="apiKeyInput" type="password" placeholder="sk-..." class="w-full rounded-xl bg-slate-950/75 border border-slate-700 px-3.5 py-2.5 text-sm text-slate-100 outline-none focus:border-emerald-400/60" />
-      </div>
-      <div class="flex flex-wrap items-center justify-between gap-2 pt-2">
-        <button id="testStudioVoiceBtn" type="button" class="px-3.5 py-2 rounded-full text-xs font-medium border border-emerald-300/40 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20">▶ Test Studio Voice</button>
-        <div class="flex items-center gap-2">
-          <button id="clearApiKeyBtn" type="button" class="px-4 py-2 rounded-full text-xs border border-slate-700 text-slate-300 hover:text-white">Clear</button>
-          <button id="saveApiKeyBtn" type="button" class="px-5 py-2 rounded-full text-xs font-semibold bg-emerald-300 text-slate-950 hover:bg-emerald-200">Save</button>
-        </div>
-      </div>
-      <div class="pt-2 border-t border-slate-700/50 space-y-1.5">
-        <button id="downloadPersonalCopyBtn" type="button" class="w-full py-2.5 px-4 rounded-xl text-xs font-medium bg-slate-900/80 hover:bg-slate-800 border border-emerald-300/35 text-emerald-100 transition">⬇ Download My Personal Copy (Key Saved Inside)</button>
-        <p class="text-[11px] text-slate-400 leading-snug">Saves a private <span class="text-slate-200">stillness-personal.html</span> directly on your phone with your key pre-filled so you never have to paste it again. Don't share that file publicly.</p>
-      </div>
+      <p id="studioConnectionStatus" class="text-xs text-slate-400 leading-relaxed">Studio voices connect automatically. No setup is needed.</p>
+      <button id="testStudioVoiceBtn" type="button" class="px-3.5 py-2 rounded-full text-xs font-medium border border-emerald-300/40 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/20">▶ Test Studio Voice</button>
     </div>
   </div>
 
@@ -572,12 +554,11 @@
         pauseTotalSec: 0,
         breathTick: 0
       },
-      apiKey: /*STILLNESS_OAI_KEY*/''/*END_STILLNESS_OAI_KEY*/,
-      geminiKey: /*STILLNESS_GEM_KEY*/''/*END_STILLNESS_GEM_KEY*/,
       aiScriptCacheKey: '',
       aiGeneratedChapters: null,
       aiLoading: false,
-      serverHostedKey: false
+      serverHostedKey: location.protocol === 'http:' || location.protocol === 'https:',
+      serverStatus: 'checking'
     };
 
     const soundElements = {};
@@ -600,83 +581,6 @@
     if (window.speechSynthesis) {
       refreshBrowserVoices();
       window.speechSynthesis.onvoiceschanged = refreshBrowserVoices;
-    }
-
-    // ==================== STORAGE HELPERS ====================
-    function persistKeysLocally(gKey, oKey) {
-      try {
-        if (gKey) localStorage.setItem('stillness_gemini_key', gKey);
-        else localStorage.removeItem('stillness_gemini_key');
-        if (oKey) localStorage.setItem('stillness_openai_key', oKey);
-        else localStorage.removeItem('stillness_openai_key');
-      } catch (e) {}
-      try {
-        if (gKey) sessionStorage.setItem('stillness_gemini_key', gKey);
-        else sessionStorage.removeItem('stillness_gemini_key');
-        if (oKey) sessionStorage.setItem('stillness_openai_key', oKey);
-        else sessionStorage.removeItem('stillness_openai_key');
-      } catch (e) {}
-      try {
-        if (gKey || oKey) {
-          window.name = 'STILLNESS_KEYS:' + JSON.stringify({ g: gKey || '', o: oKey || '' });
-        } else if (typeof window.name === 'string' && window.name.startsWith('STILLNESS_KEYS:')) {
-          window.name = '';
-        }
-      } catch (e) {}
-    }
-
-    function loadSavedState() {
-      try {
-        const key = localStorage.getItem('stillness_openai_key');
-        if (key) state.apiKey = key;
-        const gKey = localStorage.getItem('stillness_gemini_key');
-        if (gKey) state.geminiKey = gKey;
-      } catch (e) {}
-      try {
-        if (!state.apiKey) {
-          const sk = sessionStorage.getItem('stillness_openai_key');
-          if (sk) state.apiKey = sk;
-        }
-        if (!state.geminiKey) {
-          const sg = sessionStorage.getItem('stillness_gemini_key');
-          if (sg) state.geminiKey = sg;
-        }
-      } catch (e) {}
-      try {
-        if ((!state.geminiKey || !state.apiKey) && typeof window.name === 'string' && window.name.startsWith('STILLNESS_KEYS:')) {
-          const parsed = JSON.parse(window.name.slice('STILLNESS_KEYS:'.length));
-          if (!state.geminiKey && parsed.g) state.geminiKey = parsed.g;
-          if (!state.apiKey && parsed.o) state.apiKey = parsed.o;
-        }
-      } catch (e) {}
-    }
-
-    function downloadPersonalCopyWithKey() {
-      const gKey = document.getElementById('geminiKeyInput').value.trim();
-      const oKey = document.getElementById('apiKeyInput').value.trim();
-      if (!gKey && !oKey) {
-        showToast('Paste your Gemini or OpenAI API key first.');
-        return;
-      }
-      state.geminiKey = gKey;
-      state.apiKey = oKey;
-      persistKeysLocally(gKey, oKey);
-      renderVoiceModeSwitcher();
-
-      const fullHtml = '<!DOCTYPE html>\n' + document.documentElement.outerHTML
-        .replace(/\/\*STILLNESS_GEM_KEY\*\/[\s\S]*?\/\*END_STILLNESS_GEM_KEY\*\//, `/*STILLNESS_GEM_KEY*/${JSON.stringify(gKey)}/*END_STILLNESS_GEM_KEY*/`)
-        .replace(/\/\*STILLNESS_OAI_KEY\*\/[\s\S]*?\/\*END_STILLNESS_OAI_KEY\*\//, `/*STILLNESS_OAI_KEY*/${JSON.stringify(oKey)}/*END_STILLNESS_OAI_KEY*/`);
-
-      const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'stillness-personal.html';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
-      showToast('Downloaded stillness-personal.html with your key saved inside (keep it private!).');
     }
 
     function showToast(msg) {
@@ -1430,7 +1334,7 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
 
     async function maybeEnhanceWithAI(plan, forceRefresh = false) {
       if (!state.intention.trim()) return plan;
-      if (!state.serverHostedKey && !state.geminiKey && !state.apiKey) return plan;
+      if (!state.serverHostedKey) return plan;
 
       const cacheKey = currentScriptCacheKey();
       if (!forceRefresh && state.aiGeneratedChapters && state.aiScriptCacheKey === cacheKey && state.aiGeneratedChapters.length === plan.chapters.length) {
@@ -1441,7 +1345,7 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
       const prompt = buildAIPrompt(plan);
       let content = '';
 
-      if (state.serverHostedKey && !state.geminiKey) {
+      if (state.serverHostedKey) {
         try {
           const resp = await fetch('/api/script', {
             method: 'POST',
@@ -1451,50 +1355,6 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
           if (resp.ok) {
             const data = await resp.json();
             content = data.text || '';
-          }
-        } catch (e) {}
-      }
-
-      if (!content && state.geminiKey) {
-        const textModels = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash'];
-        for (const model of textModels) {
-          try {
-            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'x-goog-api-key': state.geminiKey
-              },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }]
-              })
-            });
-            if (resp.ok) {
-              const data = await resp.json();
-              content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-              if (content) break;
-            }
-          } catch (e) {}
-        }
-      }
-
-      if (!content && state.apiKey) {
-        try {
-          const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${state.apiKey}`
-            },
-            body: JSON.stringify({
-              model: 'gpt-4o-mini',
-              messages: [{ role: 'user', content: prompt }],
-              temperature: 0.75
-            })
-          });
-          if (resp.ok) {
-            const data = await resp.json();
-            content = data.choices?.[0]?.message?.content || '';
           }
         } catch (e) {}
       }
@@ -1570,151 +1430,31 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
     }
 
     async function speakWithGeminiTTS(text, voiceObj, onDone) {
-      if (!state.serverHostedKey && !state.geminiKey) return false;
+      if (!state.serverHostedKey) return false;
       lastTTSErrorDetail = '';
-      if (state.serverHostedKey && !state.geminiKey) {
-        try {
-          const resp = await fetch('/api/tts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              text,
-              voiceName: voiceObj.geminiVoice || 'Vindemiatrix',
-              style: voiceObj.geminiStyle || 'very slow, soft, warm, gentle meditation guide with a soothing unhurried cadence'
-            })
-          });
-          if (resp.ok) {
-            const d = await resp.json();
-            if (d && d.data) return await playInlineAudioData(d, onDone);
-          } else {
-            const ej = await resp.json().catch(() => ({}));
-            lastTTSErrorDetail = ej.error || `Server HTTP ${resp.status}`;
-          }
-        } catch (e) {
-          lastTTSErrorDetail = e.message || 'Server TTS network error';
-        }
-        return false;
-      }
-      const ttsModels = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts', 'gemini-2.5-flash-preview-tts'];
-      for (const model of ttsModels) {
-        try {
-          const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': state.geminiKey
-            },
-            body: JSON.stringify({
-              contents: [{
-                parts: [{
-                  text: text,
-                  speech_metadata: {
-                    style: voiceObj.geminiStyle || 'very slow, soft, warm, gentle meditation guide with a soothing unhurried cadence'
-                  }
-                }]
-              }],
-              generationConfig: {
-                responseModalities: ['AUDIO'],
-                speechConfig: {
-                  voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: voiceObj.geminiVoice || 'Vindemiatrix' }
-                  }
-                }
-              }
-            })
-          });
-          if (!resp.ok) {
-            let errMsg = `HTTP ${resp.status}`;
-            try {
-              const errJson = await resp.json();
-              if (errJson?.error?.message) errMsg = `HTTP ${resp.status}: ${errJson.error.message}`;
-            } catch (e) {}
-            lastTTSErrorDetail = `${model} (${errMsg})`;
-            continue;
-          }
-          const data = await resp.json();
-          const parts = data.candidates?.[0]?.content?.parts || [];
-          const audioPart = parts.find(p => p.inlineData && p.inlineData.data);
-          const inlineData = audioPart ? audioPart.inlineData : null;
-          if (!inlineData || !inlineData.data) {
-            lastTTSErrorDetail = `${model} returned no audio`;
-            continue;
-          }
-          const mime = (inlineData.mimeType || '').toLowerCase();
-          let url = '';
-          if (mime.includes('wav') || mime.includes('mpeg') || mime.includes('mp3') || mime.includes('ogg')) {
-            url = `data:${inlineData.mimeType};base64,${inlineData.data}`;
-          } else {
-            const rateMatch = mime.match(/rate=(\d+)/);
-            const rate = rateMatch ? Number(rateMatch[1]) : 24000;
-            url = pcmBase64ToWavUrl(inlineData.data, rate);
-          }
-          let settled = false;
-          const finishVoice = () => {
-            if (settled) return;
-            settled = true;
-            voicePlayer.onended = null;
-            voicePlayer.onerror = null;
-            if (url.startsWith('blob:')) URL.revokeObjectURL(url);
-            onDone();
-          };
-          voicePlayer.onended = finishVoice;
-          voicePlayer.onerror = finishVoice;
-          voicePlayer.src = url;
-          voicePlayer.volume = state.voiceVolume / 100;
-          await voicePlayer.play();
-          return true;
-        } catch (e) {
-          lastTTSErrorDetail = `${model}: ${e && e.message ? e.message : 'network error'}`;
-        }
-      }
-      if (state.session.active && state.session.chapterIndex === 0 && lastTTSErrorDetail) {
-        showToast(`Gemini voice error: ${lastTTSErrorDetail.slice(0, 110)}`);
-      }
-      return false;
-    }
-
-    async function speakWithOpenAITTS(text, voiceObj, onDone) {
       try {
-        const resp = await fetch('https://api.openai.com/v1/audio/speech', {
+        const resp = await fetch('/api/tts', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${state.apiKey}`
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model: 'tts-1',
-            voice: voiceObj.openaiVoice || 'nova',
-            input: text,
-            speed: 0.86
+            text,
+            voiceName: voiceObj.geminiVoice || 'Vindemiatrix',
+            style: voiceObj.geminiStyle || 'very slow, soft, warm, gentle meditation guide with a soothing unhurried cadence'
           })
         });
         if (!resp.ok) {
-          if (state.session.chapterIndex === 0) {
-            showToast(`OpenAI voice couldn't connect (HTTP ${resp.status})—check your API key.`);
-          }
+          const detail = await resp.json().catch(() => ({}));
+          lastTTSErrorDetail = detail.error || 'Studio voice is temporarily unavailable.';
+          showToast(lastTTSErrorDetail);
           return false;
         }
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
-        let settled = false;
-        const finishVoice = () => {
-          if (settled) return;
-          settled = true;
-          voicePlayer.onended = null;
-          voicePlayer.onerror = null;
-          URL.revokeObjectURL(url);
-          onDone();
-        };
-        voicePlayer.onended = finishVoice;
-        voicePlayer.onerror = finishVoice;
-        voicePlayer.src = url;
-        voicePlayer.volume = state.voiceVolume / 100;
-        await voicePlayer.play();
-        return true;
+        const audio = await resp.json();
+        if (audio && audio.data) return await playInlineAudioData(audio, onDone);
+        lastTTSErrorDetail = 'Studio voice returned no audio. Please try again.';
       } catch (e) {
-        return false;
+        lastTTSErrorDetail = 'Could not reach studio voice. Please try again.';
       }
+      return false;
     }
 
     function pickBestNaturalBrowserVoice(voiceObj) {
@@ -1762,7 +1502,7 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
 
     function startReadingPaceFallback(text, onDone, showNotice) {
       const readMs = Math.max(7000, Math.min(22000, (text || '').split(/\s+/).length * 440));
-      setOrbState('listen', 'Reading Pace', formatTime(state.session.elapsedSec), 'Open in Chrome/Safari or add API key for voice');
+      setOrbState('listen', 'Reading Pace', formatTime(state.session.elapsedSec), 'Voice unavailable · Following the script on screen');
       if (showNotice) {
         showToast('Continuing with gentle on-screen pacing.');
       }
@@ -1971,7 +1711,7 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
       state.previewingVoiceId = voiceId;
       renderVoiceGrid();
 
-      if (state.serverHostedKey || state.geminiKey) {
+      if (state.serverHostedKey) {
         const sampleText = `Take a slow, gentle breath in... and let your shoulders soften as you breathe out. I'm ${voiceObj.name}, and I'll be guiding your practice today.`;
         const ok = await speakWithGeminiTTS(sampleText, voiceObj, () => {
           state.previewingVoiceId = null;
@@ -2091,7 +1831,7 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
       renderLiveMixer();
       updateProgressUI();
 
-      const hasAIKey = Boolean(state.serverHostedKey || state.geminiKey || state.apiKey);
+      const hasAIKey = Boolean(state.serverHostedKey);
       setOrbState('listen', 'Settling In', formatTime(0), hasAIKey ? 'Composing your personal script...' : 'Gentle 2.8s fade-in');
       document.getElementById('playerChapterTitle').textContent = 'Preparing Your Personal Space';
       document.getElementById('playerScriptText').textContent = 'Let the natural soundscape gently fade in as your personalized practice begins...';
@@ -2145,14 +1885,10 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
       };
 
       // Exact Custom Script ONLY (never plays mismatched pre-recorded tracks):
-      // Gemini Studio Voice -> OpenAI Studio Voice -> Natural Browser Speech -> Calm On-Screen Pacing
-      if (state.serverHostedKey || state.geminiKey) {
+      // Hosted Studio Voice -> Natural Browser Speech -> Calm On-Screen Pacing
+      if (state.serverHostedKey) {
         const okGemini = await speakWithGeminiTTS(ch.text, voiceObj, onSpokenDone);
         if (okGemini) return;
-      }
-      if (state.apiKey) {
-        const ok = await speakWithOpenAITTS(ch.text, voiceObj, onSpokenDone);
-        if (ok) return;
       }
       const okBrowser = speakWithBrowserNaturalVoice(ch.text, voiceObj, onSpokenDone, handleNoLocalVoice);
       if (okBrowser) return;
@@ -2333,26 +2069,18 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
     function renderVoiceModeSwitcher() {
       const hint = document.getElementById('voiceModeHint');
       const badge = document.getElementById('voiceEngineBadge');
-      const hasCloudTTS = Boolean(state.serverHostedKey || state.geminiKey || state.apiKey);
-      const hasBrowserSpeech = Boolean(typeof window !== 'undefined' && window.speechSynthesis && !browserSpeechBlockedDetected);
+      const statusText = document.getElementById('studioConnectionStatus');
       const notice = document.getElementById('mobileSpeechNotice');
-      if (notice) {
-        notice.classList.add('hidden');
-      }
-
-      if (state.serverHostedKey && !state.geminiKey) {
-        if (badge) badge.textContent = 'Studio Voice Ready';
-        hint.textContent = 'Hosted Studio Voice active: writes & speaks your exact personalized meditation automatically—no key needed.';
-      } else if (state.geminiKey) {
-        if (badge) badge.textContent = 'Gemini Studio Voice';
-        hint.textContent = 'Gemini Studio Voice active: writes & speaks your exact personalized meditation in studio quality.';
-      } else if (state.apiKey) {
-        if (badge) badge.textContent = 'OpenAI Studio Voice';
-        hint.textContent = 'OpenAI Studio Voice active: writes & speaks your exact personalized meditation in studio quality.';
-      } else {
-        if (badge) badge.textContent = 'Exact Script Mode';
-        hint.textContent = 'Always matches your custom script (never plays generic tracks). Add a free Gemini key for studio voice right here, or open in Chrome.';
-      }
+      if (notice) notice.classList.add('hidden');
+      const ready = state.serverStatus === 'ready';
+      const message = ready
+        ? 'Studio voices are connected and ready. Choose a voice and begin your meditation.'
+        : state.serverStatus === 'checking'
+          ? 'Studio voices connect automatically. No setup is needed.'
+          : 'Studio voice is temporarily unavailable. Please try again shortly. Browser speech is available as a backup.';
+      if (badge) badge.textContent = ready ? 'Studio Voice Ready' : state.serverStatus === 'checking' ? 'Connecting Studio Voice' : 'Browser Voice Backup';
+      if (hint) hint.textContent = message;
+      if (statusText) statusText.textContent = message;
     }
 
     function renderMoodChips() {
@@ -2588,7 +2316,7 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
     function renderScriptView() {
       const plan = getActiveSessionPlan();
       const aiBtn = document.getElementById('aiRewriteScriptBtn');
-      const hasAIKey = Boolean(state.serverHostedKey || state.geminiKey || state.apiKey);
+      const hasAIKey = Boolean(state.serverHostedKey);
       if (aiBtn) {
         aiBtn.classList.toggle('hidden', !hasAIKey || !state.intention.trim());
         aiBtn.disabled = state.aiLoading;
@@ -2694,22 +2422,22 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
 
     // ==================== EVENT WIRING ====================
     async function detectServerBackend() {
-      if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
+      if (!state.serverHostedKey) {
+        state.serverStatus = 'unavailable';
+        renderVoiceModeSwitcher();
+        return;
+      }
       try {
-        const r = await fetch('/api/status');
-        if (r.ok) {
-          const j = await r.json();
-          if (j && j.configured) {
-            state.serverHostedKey = true;
-            renderVoiceModeSwitcher();
-            if (state.view === 'script') renderScriptView();
-          }
-        }
-      } catch (e) {}
+        const r = await fetch('/api/status', { cache: 'no-store' });
+        const data = r.ok ? await r.json() : null;
+        state.serverStatus = data?.configured ? 'ready' : 'unavailable';
+      } catch (e) {
+        state.serverStatus = 'unavailable';
+      }
+      renderVoiceModeSwitcher();
     }
 
     function init() {
-      loadSavedState();
       detectServerBackend();
       renderMoodChips();
       renderStyleGrid();
@@ -2800,64 +2528,29 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
         document.getElementById('liveMixerPanel').classList.add('hidden');
       });
 
-      // Settings Modal
+      // Studio connection settings; credentials stay on the server.
       const openSettingsModal = () => {
-        document.getElementById('geminiKeyInput').value = state.geminiKey;
-        document.getElementById('apiKeyInput').value = state.apiKey;
         document.getElementById('settingsModal').classList.remove('hidden');
+        detectServerBackend();
       };
-      document.getElementById('openSettingsBtn').addEventListener('click', openSettingsModal);
-      const openFromVoice = document.getElementById('openSettingsFromVoiceBtn');
-      if (openFromVoice) openFromVoice.addEventListener('click', openSettingsModal);
-      const openFromNotice = document.getElementById('openSettingsFromNoticeBtn');
-      if (openFromNotice) openFromNotice.addEventListener('click', openSettingsModal);
-      const openFromPlayerPill = document.getElementById('playerVoiceSourcePill');
-      if (openFromPlayerPill) openFromPlayerPill.addEventListener('click', openSettingsModal);
+      for (const id of ['openSettingsBtn', 'openSettingsFromVoiceBtn', 'openSettingsFromNoticeBtn', 'playerVoiceSourcePill']) {
+        document.getElementById(id)?.addEventListener('click', openSettingsModal);
+      }
       document.getElementById('closeSettingsBtn').addEventListener('click', () => {
         document.getElementById('settingsModal').classList.add('hidden');
       });
       document.getElementById('testStudioVoiceBtn').addEventListener('click', async () => {
-        const gKey = document.getElementById('geminiKeyInput').value.trim();
-        const oKey = document.getElementById('apiKeyInput').value.trim();
-        if (!gKey && !oKey) {
-          showToast('Paste a Gemini or OpenAI API key first to test Studio Voice.');
-          return;
-        }
-        state.geminiKey = gKey;
-        state.apiKey = oKey;
         const btn = document.getElementById('testStudioVoiceBtn');
         btn.disabled = true;
         btn.textContent = 'Testing…';
-        const voiceObj = VOICES.find(v => v.id === state.voiceId) || VOICES[0];
-        const sample = 'Take a slow, gentle breath. Your custom studio voice is connected and ready.';
-        let ok = false;
-        if (gKey) ok = await speakWithGeminiTTS(sample, voiceObj, () => {});
-        if (!ok && oKey) ok = await speakWithOpenAITTS(sample, voiceObj, () => {});
-        btn.disabled = false;
-        btn.textContent = '▶ Test Studio Voice';
-        showToast(ok ? 'Studio voice works! Tap Save to keep it.' : (lastTTSErrorDetail ? `Connection error: ${lastTTSErrorDetail.slice(0, 120)}` : 'Could not connect—double-check that your key is copied cleanly.'));
-      });
-      document.getElementById('saveApiKeyBtn').addEventListener('click', () => {
-        state.geminiKey = document.getElementById('geminiKeyInput').value.trim();
-        state.apiKey = document.getElementById('apiKeyInput').value.trim();
-        state.aiGeneratedChapters = null;
-        persistKeysLocally(state.geminiKey, state.apiKey);
-        document.getElementById('settingsModal').classList.add('hidden');
-        renderVoiceModeSwitcher();
-        if (state.view === 'script') renderScriptView();
-        showToast('AI script & studio voice settings saved.');
-      });
-      document.getElementById('downloadPersonalCopyBtn').addEventListener('click', downloadPersonalCopyWithKey);
-      document.getElementById('clearApiKeyBtn').addEventListener('click', () => {
-        state.geminiKey = '';
-        state.apiKey = '';
-        state.aiGeneratedChapters = null;
-        document.getElementById('geminiKeyInput').value = '';
-        document.getElementById('apiKeyInput').value = '';
-        persistKeysLocally('', '');
-        renderVoiceModeSwitcher();
-        if (state.view === 'script') renderScriptView();
-        showToast('API keys cleared.');
+        try {
+          const voiceObj = VOICES.find(v => v.id === state.voiceId) || VOICES[0];
+          const ok = await speakWithGeminiTTS('Take a slow, gentle breath. Your studio voice is ready.', voiceObj, () => {});
+          showToast(ok ? 'Studio voice is ready.' : lastTTSErrorDetail || 'Studio voice is temporarily unavailable. Please try again.');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = '▶ Test Studio Voice';
+        }
       });
     }
 
