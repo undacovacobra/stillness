@@ -1,0 +1,64 @@
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ error: 'GEMINI_API_KEY is not set in Vercel Environment Variables.' });
+  }
+  const { text, voiceName, style } = req.body || {};
+  if (!text || typeof text !== 'string') {
+    return res.status(400).json({ error: 'Missing text' });
+  }
+
+  const models = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts', 'gemini-2.5-flash-preview-tts'];
+  let lastErr = 'No TTS model succeeded';
+  for (const model of models) {
+    try {
+      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: text,
+              speech_metadata: {
+                style: style || 'very slow, soft, warm, gentle meditation guide with a soothing unhurried cadence'
+              }
+            }]
+          }],
+          generationConfig: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: voiceName || 'Vindemiatrix' }
+              }
+            }
+          }
+        })
+      });
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        lastErr = `${model}: HTTP ${resp.status} ${errData?.error?.message || ''}`.trim();
+        continue;
+      }
+      const data = await resp.json();
+      const parts = data.candidates?.[0]?.content?.parts || [];
+      const audioPart = parts.find(p => p.inlineData && p.inlineData.data);
+      if (audioPart?.inlineData?.data) {
+        return res.status(200).json({
+          data: audioPart.inlineData.data,
+          mimeType: audioPart.inlineData.mimeType || 'audio/L16;rate=24000',
+          model
+        });
+      }
+      lastErr = `${model}: returned no audio`;
+    } catch (e) {
+      lastErr = `${model}: ${e.message}`;
+    }
+  }
+  return res.status(502).json({ error: lastErr });
+}
