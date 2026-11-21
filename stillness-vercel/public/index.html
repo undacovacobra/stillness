@@ -1619,7 +1619,9 @@
       const run = voicePlaybackRun;
       const mime = (inlineData.mimeType || '').toLowerCase();
       let url = '';
-      if (inlineData.blob) {
+      if (inlineData.url) {
+        url = inlineData.url;
+      } else if (inlineData.blob) {
         url = URL.createObjectURL(inlineData.blob);
       } else if (mime.includes('wav') || mime.includes('mpeg') || mime.includes('mp3') || mime.includes('ogg')) {
         url = `data:${inlineData.mimeType};base64,${inlineData.data}`;
@@ -2057,25 +2059,16 @@
       updateStudioSummary();
 
       if (kokoro) {
-        const controller = new AbortController();
-        voiceRequestController = controller;
-        try {
-          const sample = "Take a gentle breath in, and let it go slowly. For this moment, simply notice the quiet rhythm of your breathing.";
-          const audio = await kokoro.render(sample, controller.signal);
-          if (previewRun !== voicePlaybackRun) return;
-          const reset = () => {
-            state.previewingVoiceId = null;
-            renderVoiceGrid();
-          };
-          await playInlineAudioData(audio, reset, reset);
-        } catch (error) {
-          if (previewRun !== voicePlaybackRun) return;
+        const reset = () => {
           state.previewingVoiceId = null;
           renderVoiceGrid();
-          showToast('Kokoro Heart could not prepare the preview. Tap Preview Voice to try again.');
-        } finally {
-          if (voiceRequestController === controller) voiceRequestController = null;
-        }
+        };
+        const failed = () => {
+          if (previewRun !== voicePlaybackRun) return;
+          reset();
+          showToast('Kokoro Heart could not play the preview. Tap Preview Voice to try again.');
+        };
+        await playInlineAudioData({ url: '/audio/kokoro-heart-preview.mp3' }, reset, failed).catch(failed);
         return;
       }
 
@@ -2233,6 +2226,7 @@
 
     // ==================== SESSION ENGINE ====================
     function clearSessionTimers() {
+      state.session.kokoroController?.abort();
       if (sessionTicker) { clearInterval(sessionTicker); sessionTicker = null; }
       if (pauseTimer) { clearInterval(pauseTimer); pauseTimer = null; }
       if (fadeinTimeout) { clearTimeout(fadeinTimeout); fadeinTimeout = null; }
@@ -2323,10 +2317,6 @@
     }
 
     async function requestPreparedClip(text, voice, model, controller) {
-      if (kokoro) {
-        const audio = await kokoro.render(text, controller.signal);
-        return { ...audio, model: 'kokoro-heart' };
-      }
       const body = { text, voiceName: voice.geminiVoice, style: voice.geminiStyle, model };
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const request = new AbortController();
@@ -2372,7 +2362,56 @@
       return { blob: new Blob([bytes], { type }), mimeType: type };
     }
 
+    function loadKokoroChapter(session, chapterIndex) {
+      const pieces = session.narrationPlan[chapterIndex];
+      const clips = session.narrationClips[chapterIndex];
+      if (!pieces || clips.length === pieces.length) return Promise.resolve();
+      const signal = session.kokoroController.signal;
+      const pending = session.narrationRequests[chapterIndex] ??= (async () => {
+        for (let index = clips.length; index < pieces.length; index += 1) {
+          const clip = await kokoro.render(pieces[index], signal);
+          if (signal.aborted) return;
+          clips.push(clip);
+        }
+      })().finally(() => { delete session.narrationRequests[chapterIndex]; });
+      return pending;
+    }
+
+    async function prepareKokoroStart(session) {
+      session.narrationPlan ??= session.chapters.map(chapter => narrationPieces(chapter.text));
+      session.narrationClips ??= session.narrationPlan.map(() => []);
+      session.narrationRequests ??= {};
+      session.kokoroController ??= new AbortController();
+      session.phase = 'preparing-voice';
+      document.getElementById('narrationChoices').classList.add('hidden');
+      document.getElementById('audioRecoveryNotice').classList.add('hidden');
+      document.getElementById('playPauseBtn').textContent = session.paused ? 'Resume' : 'Pause';
+      setOrbState('listen', 'Preparing Opening', '0:00', 'Kokoro Heart');
+      document.getElementById('playerScriptText').textContent = 'Your practice will begin as soon as the opening is ready. The next chapter will prepare as you listen.';
+
+      try {
+        await loadKokoroChapter(session, 0);
+      } catch (error) {
+        if (session !== state.session || !session.active || session.kokoroController.signal.aborted) return;
+        session.phase = 'audio-error';
+        pendingVoiceAction = () => prepareKokoroStart(session);
+        document.getElementById('playPauseBtn').textContent = 'Retry Kokoro Heart';
+        document.getElementById('playerChapterTitle').textContent = 'Kokoro Heart Unavailable';
+        document.getElementById('playerScriptText').textContent = error.message;
+        setOrbState('listen', 'Voice Unavailable', '0:00', 'Retry or start with the soundscape');
+        showNarrationChoices(false);
+        return;
+      }
+
+      if (session !== state.session || !session.active || session.kokoroController.signal.aborted) return;
+      session.narrationModel = 'kokoro-heart';
+      session.narrationReady = true;
+      session.phase = 'ready-voice';
+      scheduleSessionStart(session);
+    }
+
     async function prepareSessionNarration(session) {
+      if (kokoro) return prepareKokoroStart(session);
       const voice = VOICES.find(item => item.id === session.settings.voiceId) || VOICES[0];
       const plan = session.narrationPlan ??= session.chapters.map(chapter => narrationPieces(chapter.text));
       const clips = session.narrationClips ??= plan.map(() => []);
@@ -2389,9 +2428,7 @@
           const chapterClips = clips[chapterIndex];
           for (let piece = chapterClips.length; piece < plan[chapterIndex].length; piece += 1) {
             setOrbState('listen', 'Preparing Voice', '0:00', `Section ${chapterIndex + 1} of ${plan.length}`);
-            document.getElementById('playerScriptText').textContent = kokoro
-              ? 'Kokoro is preparing your narration on this device. First use downloads the voice model.'
-              : 'Your meditation will begin when the full narration is ready.';
+            document.getElementById('playerScriptText').textContent = 'Your meditation will begin when the full narration is ready.';
             let audio;
             try {
               if (Date.now() >= voiceRetryAt) {
@@ -2409,13 +2446,11 @@
             session.phase = 'audio-error';
             pendingVoiceAction = () => prepareSessionNarration(session);
             setOrbState('listen', 'Voice Unavailable', '0:00', 'Choose how to begin below');
-            document.getElementById('playPauseBtn').textContent = kokoro ? 'Retry Kokoro Heart' : 'Retry Studio Voice';
+            document.getElementById('playPauseBtn').textContent = 'Retry Studio Voice';
             const message = Date.now() < voiceRetryAt
               ? voiceRetryMessage()
-              : kokoro
-                ? 'Kokoro Heart could not finish preparing the narration. Try again or start with just the soundscape.'
-                : 'Studio narration could not be prepared. Retry your selected voice or start with an option below.';
-            document.getElementById('playerChapterTitle').textContent = kokoro ? 'Kokoro Heart Unavailable' : 'Studio Voice Unavailable';
+              : 'Studio narration could not be prepared. Retry your selected voice or start with an option below.';
+            document.getElementById('playerChapterTitle').textContent = 'Studio Voice Unavailable';
             document.getElementById('playerScriptText').textContent = message;
             document.getElementById('audioRecoveryMessage').textContent = message;
             showNarrationChoices(true);
@@ -2474,8 +2509,31 @@
     }
 
     async function playPreparedChapter(session, onDone) {
-      const clips = session.narrationClips[session.chapterIndex];
+      const chapterIndex = session.chapterIndex;
+      const clips = session.narrationClips[chapterIndex];
       const run = voicePlaybackRun;
+      if (kokoro) {
+        const skip = document.getElementById('skipChapterBtn');
+        try {
+          if (clips.length < session.narrationPlan[chapterIndex].length) {
+            skip.disabled = true;
+            setOrbState('listen', 'Preparing Chapter', formatTime(session.elapsedSec), session.chapters[chapterIndex].title);
+            await loadKokoroChapter(session, chapterIndex);
+          }
+        } catch (error) {
+          if (run !== voicePlaybackRun || !session.active) return;
+          session.phase = 'audio-error';
+          pendingVoiceAction = playCurrentChapter;
+          document.getElementById('playPauseBtn').textContent = 'Retry Kokoro Heart';
+          showAudioRecovery(error.message);
+          skip.disabled = false;
+          return;
+        }
+        if (run !== voicePlaybackRun || !session.active) return;
+        skip.disabled = false;
+        // Prepare one chapter ahead while this chapter plays. Reuse that request if playback catches up.
+        loadKokoroChapter(session, chapterIndex + 1).catch(() => {});
+      }
       let index = 0;
       let retryUsed = false;
       let playAttempt = 0;
@@ -2785,8 +2843,8 @@
       if (notice) notice.classList.add('hidden');
       if (kokoro) {
         if (badge) badge.textContent = 'Kokoro Heart';
-        if (hint) hint.textContent = 'Generated on this device. The first preview or session downloads the voice model.';
-        if (statusText) statusText.textContent = 'Kokoro Heart narrates the full session at a slow pace.';
+        if (hint) hint.textContent = 'Kokoro Heart prepares one chapter ahead while you listen.';
+        if (statusText) statusText.textContent = 'Kokoro Heart narrates the full session at a slow pace. The trial generates narration on its server.';
         return;
       }
       const ready = state.serverStatus === 'ready';

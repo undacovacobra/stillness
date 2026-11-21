@@ -76,25 +76,33 @@ function page(path, fetch, stored = new Map(), kokoro) {
   return { run: code => vm.runInContext(code, context), elements };
 }
 
-test('Kokoro trial uses the same local voice for previews and complete session narration', async () => {
+test('Kokoro trial starts as soon as its first chapter is ready and reuses its next chapter request', async () => {
   const spoken = [];
-  const p = page('../public/index.html', async () => assert.fail('The trial must not call a speech API'), new Map(), {
+  let resolveNext;
+  const next = new Promise(resolve => { resolveNext = resolve; });
+  const p = page('../public/index.html', async () => assert.fail('The trial must not call the paid speech API'), new Map(), {
     async render(text) {
       spoken.push(text);
+      if (text.startsWith('Let your')) await next;
       return { mimeType: 'audio/wav', blob: new Blob([text], { type: 'audio/wav' }) };
     }
   });
   assert.equal(p.run('VOICES.map(voice => voice.name).join()'), 'Kokoro Heart');
   await p.run('toggleVoicePreview(VOICES[0].id)');
-  assert.equal(spoken.length, 1);
-  assert.match(spoken[0], /gentle breath/i);
+  assert.equal(p.elements.get('voicePlayer').src, '/audio/kokoro-heart-preview.mp3');
+  assert.deepEqual(spoken, []);
   p.run(`stopVoicePlayback(); state.session = { active: true, paused: false,
     chapters: [{ text: 'Notice your shoulders.' }, { text: 'Let your breathing settle.' }],
     settings: { voiceId: VOICES[0].id } };`);
   await p.run('prepareSessionNarration(state.session)');
   assert.equal(p.run('state.session.narrationReady'), true);
-  assert.equal(p.run('state.session.narrationClips.length'), 2);
-  assert.deepEqual(spoken.slice(1), ['Notice your shoulders.', 'Let your breathing settle.']);
+  assert.equal(p.run('state.session.narrationClips[1].length'), 0);
+  const preload = p.run('loadKokoroChapter(state.session, 1)');
+  const playback = p.run('loadKokoroChapter(state.session, 1)');
+  assert.equal(preload, playback);
+  resolveNext();
+  await playback;
+  assert.deepEqual(spoken, ['Notice your shoulders.', 'Let your breathing settle.']);
 });
 
 for (const path of ['../index.html', '../public/index.html']) {

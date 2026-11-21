@@ -1,22 +1,4 @@
-import { KokoroTTS } from 'https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js';
-
-const modelId = 'onnx-community/Kokoro-82M-v1.0-ONNX';
-let model;
-
-self.addEventListener('message', async ({ data: text }) => {
-  try {
-    model ??= await KokoroTTS.from_pretrained(modelId, { dtype: 'q8', device: 'wasm' });
-    const { audio, sampling_rate: sampleRate } = await model.generate(text, { voice: 'af_heart', speed: 0.75 });
-    if (!audio?.length) throw new Error('Kokoro returned an empty clip.');
-    const wav = encodeWav(audio, sampleRate);
-    self.postMessage({ wav }, [wav]);
-  } catch (error) {
-    console.warn('Kokoro narration could not be generated:', error);
-    self.postMessage({ error: 'Kokoro could not prepare this clip. Please try again.' });
-  }
-});
-
-function encodeWav(samples, sampleRate) {
+export function encodeWav(samples, sampleRate) {
   // 16-bit PCM works with the existing player across mobile browsers.
   const dataSize = samples.length * 2;
   const buffer = new ArrayBuffer(44 + dataSize);

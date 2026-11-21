@@ -1,7 +1,12 @@
 {
   "cleanUrls": true,
   "functions": {
-    "api/*.js": {
+    "api/kokoro.js": {
+      "maxDuration": 60,
+      "includeFiles": "node_modules/kokoro-js/voices/af_heart.bin",
+      "excludeFiles": "node_modules/{onnxruntime-node/bin/napi-v3/{darwin,win32,linux/arm64}/**,onnxruntime-web/dist/*.wasm,@huggingface/transformers/dist/*.wasm}"
+    },
+    "api/{script,status,tts}.js": {
       "maxDuration": 120
     }
   }
