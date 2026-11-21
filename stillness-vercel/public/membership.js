@@ -249,7 +249,19 @@
       const issue = await response.clone().json().catch(() => ({}));
       pendingGenerationProblem = typeof issue.error === 'string' ? issue.error : generationProblem() || 'Open your profile to check your membership.';
     }
-    if (path === '/api/tts') scheduleBalanceRefresh();
+    if (path === '/api/tts') {
+      const included = response.headers.get('X-Stillness-Remaining-Seconds');
+      const extra = response.headers.get('X-Stillness-Topup-Seconds');
+      if (snapshot.user?.id === requestedBy && snapshot.member && included !== null && extra !== null) {
+        const amounts = [Number(included), Number(extra)];
+        if (amounts.every(value => Number.isSafeInteger(value) && value >= 0)) {
+          snapshot.member = { ...snapshot.member, remaining_seconds: amounts[0], topup_seconds: amounts[1] };
+          updateBalance();
+          if (visiblePage === 'profile') renderBilling();
+        }
+      }
+      scheduleBalanceRefresh();
+    }
     return response;
   }
 
