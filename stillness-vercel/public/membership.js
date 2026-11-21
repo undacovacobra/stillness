@@ -21,6 +21,9 @@
   let snapshot = { user: null };
   let visiblePage = 'loading';
   let authMode = 'login';
+  let oauthProviders = { google: false, apple: false };
+  let oauthPending = false;
+  let oauthNotice = '';
   let pendingGenerationProblem = '';
   let refreshTimer;
   let refreshRequest;
@@ -152,6 +155,7 @@
 
   function showPage(page, { focus = true } = {}) {
     visiblePage = page;
+    if (page === 'login') renderOAuthOptions();
     const panel = byId('memberPanel');
     reveal('memberPanel', page !== 'studio');
     reveal('memberStudio', page === 'studio');
@@ -173,7 +177,7 @@
     authMode = mode;
     const authCopy = {
       login: ['Welcome to Stillness', 'Sign in for a meditation made around you.', 'Sign in'],
-      signup: ['Create your account', 'We’ll email you a link to verify your address.', 'Create account'],
+      signup: ['Create your account', 'Choose how you’d like to sign up.', 'Create account'],
       forgot: ['Reset your password', 'We’ll email you a link to choose a new password.', 'Send reset link'],
       recovery: ['Choose a new password', 'Enter a new password to return to Stillness.', 'Set password'],
       resend: ['Resend verification', 'Enter the email and password you used to create your account.', 'Send verification email']
@@ -194,6 +198,47 @@
     password.minLength = mode === 'login' ? 1 : 10;
     password.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
     text('memberAuthFeedback', '');
+    renderOAuthOptions();
+  }
+
+  function renderOAuthOptions() {
+    const supportsOAuth = ['login', 'signup'].includes(authMode);
+    reveal('memberOAuth', supportsOAuth);
+    for (const button of document.querySelectorAll('[data-member-oauth]')) {
+      button.disabled = oauthPending || oauthProviders[button.dataset.memberOauth] !== true;
+    }
+    text('memberOAuthNotice', oauthNotice);
+  }
+
+  async function loadOAuthOptions() {
+    try {
+      oauthProviders = await apiRequest(`${accountPath}?view=providers`);
+      const pending = [!oauthProviders.google && 'Google', !oauthProviders.apple && 'Apple'].filter(Boolean);
+      oauthNotice = pending.length ? `${pending.join(' and ')} sign-in is awaiting setup.` : '';
+    } catch {
+      oauthNotice = 'Google and Apple sign-in are temporarily unavailable.';
+    }
+    renderOAuthOptions();
+  }
+
+  async function signInWithProvider(button) {
+    const provider = button.dataset.memberOauth;
+    if (oauthPending || oauthProviders[provider] !== true) return;
+    oauthPending = true;
+    text('memberAuthFeedback', '');
+    renderOAuthOptions();
+    try {
+      const result = await apiRequest(accountPath, { action: 'oauth', provider });
+      const destination = new URL(result.url);
+      if (destination.protocol !== 'https:' || destination.pathname !== '/auth/v1/authorize') {
+        throw new Error('Stillness couldn’t open the sign-in provider. Try again.');
+      }
+      window.location.assign(destination.href);
+    } catch (error) {
+      oauthPending = false;
+      renderOAuthOptions();
+      text('memberAuthFeedback', error.message || 'Stillness couldn’t open the sign-in provider. Try again.');
+    }
   }
 
   function applySnapshot(next, { navigate = false } = {}) {
@@ -486,7 +531,7 @@
     let callbackError = '';
     let accepted;
     try {
-      if (redirect.code && ['signup', 'recovery'].includes(redirect.flow)) {
+      if (redirect.code && ['signup', 'recovery', 'oauth'].includes(redirect.flow)) {
         try {
           accepted = await apiRequest(accountPath, { action: 'accept', code: redirect.code, flow: redirect.flow });
         } catch (error) {
@@ -499,7 +544,10 @@
       } else if (approvedAuthReturn(redirect, accepted)) {
         text('memberAuthFeedback', 'Your email was verified. You can sign in now.');
       } else if (visiblePage === 'login' && (callbackError || redirect.authError)) {
-        text('memberAuthFeedback', callbackError || 'This link has expired. Return to this same browser and ask for a new email.');
+        const retryMessage = redirect.flow === 'oauth'
+          ? 'Sign-in was canceled or couldn’t finish. Try again from this page.'
+          : 'This link has expired. Return to this same browser and ask for a new email.';
+        text('memberAuthFeedback', callbackError || retryMessage);
       }
       if (accepted?.user) channel?.postMessage('session');
       if (redirect.billing) void handleBillingReturn(redirect.billing);
@@ -524,6 +572,15 @@
     });
     byId('memberRetry').addEventListener('click', () => loadMembership());
     byId('memberAuthForm').addEventListener('submit', submitAuth);
+    for (const button of document.querySelectorAll('[data-member-oauth]')) {
+      button.addEventListener('click', () => signInWithProvider(button));
+    }
+    window.addEventListener('pageshow', event => {
+      if (event.persisted) {
+        oauthPending = false;
+        renderOAuthOptions();
+      }
+    });
     byId('memberAuthSwitch').addEventListener('click', () => setAuthMode(authMode === 'login' ? 'signup' : 'login'));
     byId('memberAuthForgot').addEventListener('click', () => setAuthMode('forgot'));
     byId('memberResend').addEventListener('click', () => setAuthMode('resend'));
@@ -538,6 +595,7 @@
     byId('memberAdminButton').addEventListener('click', renderOwner);
     byId('memberAdminMore').addEventListener('click', loadOwnerMembers);
     void loadMembership(consumeReturnUrl());
+    void loadOAuthOptions();
   }
 
   window.StillnessMembership = {

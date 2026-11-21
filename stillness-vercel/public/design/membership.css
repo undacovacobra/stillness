@@ -10,6 +10,15 @@
   overflow-wrap: anywhere;
 }
 .member-page h1, .member-page h2 { overflow-wrap: anywhere; }
+.member-oauth { max-width: 425px; margin-top: 22px; }
+.member-oauth-buttons { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.member-oauth-buttons button { min-height: 44px; }
+.member-oauth-buttons img { display: block; }
+.member-oauth-notice, .member-oauth-divider { color: var(--soft); font-size: .875rem; }
+.member-oauth-notice { margin-top: 8px; }
+.member-oauth-notice:empty { display: none; }
+.member-oauth-divider { margin-top: 16px; }
+.member-oauth:not([hidden]) + .member-form { margin-top: 10px; }
 .member-form {
   display: grid;
   gap: 14px;

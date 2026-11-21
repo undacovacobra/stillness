@@ -8,6 +8,36 @@ import { getMember, listMembers, saveProfile } from '../lib/member-store.js';
 const signedOut = { user: null };
 const recoveryAccessCookie = 'stillness_recovery_access';
 const temporary = 'Account service is temporarily unavailable. Please try again.';
+const oauthProviders = ['google', 'apple'];
+
+async function availableProviders() {
+  const settings = await authRequest('/settings');
+  if (!settings.ok) throw new Error('Auth provider settings are unavailable.');
+  return Object.fromEntries(oauthProviders.map(provider => [provider, settings.data?.external?.[provider] === true]));
+}
+
+async function beginOAuth(req, res, provider) {
+  if (!oauthProviders.includes(provider)) return fail(res, 400, 'Choose Google or Apple to sign in.');
+  const origin = appOrigin(req);
+  if (req.headers?.origin && req.headers.origin !== origin) {
+    return fail(res, 400, 'Open the direct Stillness link to use Google or Apple sign-in.');
+  }
+  const enabled = await availableProviders();
+  if (!enabled[provider]) {
+    const name = provider === 'google' ? 'Google' : 'Apple';
+    return fail(res, 503, `${name} sign-in is awaiting setup. You can continue with email.`);
+  }
+  const callback = new URL('/', origin);
+  callback.searchParams.set('flow', 'oauth');
+  const { verifier, codeChallenge } = pkce();
+  const authorize = new URL('/auth/v1/authorize', process.env.SUPABASE_URL);
+  authorize.searchParams.set('provider', provider);
+  authorize.searchParams.set('redirect_to', callback.href);
+  authorize.searchParams.set('code_challenge', codeChallenge);
+  authorize.searchParams.set('code_challenge_method', 's256');
+  writeCookie(req, res, verifyCookie('oauth'), verifier, 600);
+  return res.status(200).json({ url: authorize.href });
+}
 
 function validEmail(value) {
   return typeof value === 'string' && value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -110,19 +140,23 @@ async function beginEmailFlow(req, res, action, email, password) {
 }
 
 async function acceptEmailCode(req, res, { code, flow }) {
-  if (!['signup', 'recovery'].includes(flow) || typeof code !== 'string' || !/^[\w.-]{8,256}$/.test(code)) {
+  if (!['signup', 'recovery', 'oauth'].includes(flow) || typeof code !== 'string' || !/^[\w.-]{8,256}$/.test(code)) {
     return fail(res, 400, 'That link is incomplete. Request a new link.');
   }
   const verifier = readCookie(req, verifyCookie(flow));
   if (!/^[\w-]{43}$/.test(verifier)) {
-    return fail(res, 400, 'Open the link in the browser where you requested it, or request a new link.');
+    return fail(res, 400, flow === 'oauth'
+      ? 'Start sign-in again in this browser.'
+      : 'Open the link in the browser where you requested it, or request a new link.');
   }
   const auth = await authRequest('/token?grant_type=pkce', {
     method: 'POST', body: { auth_code: code, code_verifier: verifier }
   });
   if (!auth.ok || !isVerified(auth.data?.user)) {
     return fail(res, auth.status >= 500 ? 503 : 400,
-      auth.status >= 500 ? temporary : 'That link is no longer valid. Request a new link.');
+      auth.status >= 500 ? temporary : flow === 'oauth'
+        ? 'That sign-in attempt has expired. Try again.'
+        : 'That link is no longer valid. Request a new link.');
   }
   writeCookie(req, res, verifyCookie(flow), '', 0);
   clearRecoveryCredentials(req, res);
@@ -189,6 +223,7 @@ export default async function handler(req, res) {
   if (!requireSameOrigin(req, res)) return;
   try {
     if (req.method === 'GET') {
+      if (req.query?.view === 'providers') return res.status(200).json(await availableProviders());
       const session = await activeSession(req, res, { allowRefresh: true });
       if (req.query?.view === 'admin') {
         if (!session || session.recovery || !ownerAccount(session.user)) return fail(res, 403, 'Owner access only.');
@@ -202,6 +237,7 @@ export default async function handler(req, res) {
     const body = req.body || {};
     const { action, password } = body;
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    if (action === 'oauth') return await beginOAuth(req, res, body.provider);
     if (action === 'login') return await login(req, res, email, password);
     if (['signup', 'forgot'].includes(action)) return await beginEmailFlow(req, res, action, email, password);
     if (action === 'accept') return await acceptEmailCode(req, res, body);

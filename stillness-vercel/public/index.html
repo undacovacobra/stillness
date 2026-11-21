@@ -34,6 +34,18 @@
       <div id="memberLogin" hidden>
         <h1 id="memberAuthTitle" tabindex="-1">Welcome to Stillness</h1>
         <p id="memberAuthLead" class="member-lede">Sign in for a meditation made around you.</p>
+        <div id="memberOAuth" class="member-oauth" hidden>
+          <div class="member-oauth-buttons" role="group" aria-label="Sign-in providers">
+            <button id="memberOAuthGoogle" type="button" data-member-oauth="google" disabled>
+              <img src="./design/google-sign-in.png" alt="Sign in with Google" width="180" height="40">
+            </button>
+            <button id="memberOAuthApple" type="button" data-member-oauth="apple" disabled>
+              <img src="./design/apple-sign-in.png" alt="Sign in with Apple" width="180" height="40">
+            </button>
+          </div>
+          <p id="memberOAuthNotice" class="member-oauth-notice" role="status"></p>
+          <p class="member-oauth-divider">Or use email</p>
+        </div>
         <form id="memberAuthForm" class="member-form">
           <label id="memberEmailField" for="memberEmail">Email
             <input id="memberEmail" name="email" type="email" autocomplete="email" maxlength="254" required>

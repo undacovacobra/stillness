@@ -20,3 +20,14 @@ Run `npm test` in this directory. Then verify signup and recovery by email, Stri
 ## Capacity before launch
 
 Supabase's monthly active user allowance and Vercel's concurrency ceiling do not establish concurrent meditation capacity. Configure a production email provider and test a realistic signup burst. Measure narration requests per session, peak starts per minute, provider errors, and preparation latency. Compare those numbers to the Gemini project's live limits before scaling invites. Use staging and synthetic responses for load testing so that it does not send real email or incur voice generation charges.
+
+## Google and Apple sign-in
+
+On the membership Supabase project, add `https://stillness-members.vercel.app/?flow=oauth` to Auth's redirect allowlist. Set the Site URL to `https://stillness-members.vercel.app/`. The public app enables each button after the corresponding provider is enabled in this project.
+
+- **Google.** In Google Cloud, create a Web application OAuth client. Use `https://stillness-members.vercel.app` as an authorized JavaScript origin and `https://uyoerkyccnqtjefjlsgz.supabase.co/auth/v1/callback` as the redirect URI. Set up the consent screen and add the client ID and secret to Supabase Auth's Google provider.
+- **Apple.** Use an eligible Sign in with Apple-enabled App Store app and its primary App ID. Create a Services ID and configure `uyoerkyccnqtjefjlsgz.supabase.co` as the domain and `https://uyoerkyccnqtjefjlsgz.supabase.co/auth/v1/callback` as the return URL. Add the Services ID and signed client secret to Supabase Auth's Apple provider, and rotate the secret before its expiry. Apple private relay email addresses can differ from the email on an existing Stillness account.
+
+Both providers return to Stillness through the same browser that initiated sign-in. Existing membership entitlement is looked up by the verified Supabase user ID. No provider gives an additional trial automatically.
+
+[Supabase Google setup](https://supabase.com/docs/guides/auth/social-sign-in/auth-google) · [Supabase Apple setup](https://supabase.com/docs/guides/auth/social-sign-in/auth-apple)
