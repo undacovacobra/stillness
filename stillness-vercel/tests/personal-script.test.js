@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import script from '../api/script.js';
+import script from '../lib/gemini-script.js';
 
 const intention = '  Maya said "I need space" after our argument on Tuesday.\nMy review with Luis is Friday at 9; my chest feels tight. I hope to listen without defending myself.  ';
 const request = { intention, style: 'Loving-kindness', durationMin: 10, chapterCount: 3 };

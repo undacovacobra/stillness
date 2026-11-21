@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import status from '../api/status.js';
-import tts from '../api/tts.js';
-import script from '../api/script.js';
+import tts from '../lib/gemini-tts.js';
+import script from '../lib/gemini-script.js';
 
 function setEnv(t, key, value) {
   const old = process.env[key];

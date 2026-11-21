@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import tts from '../api/tts.js';
-import script from '../api/script.js';
+import tts from '../lib/gemini-tts.js';
+import script from '../lib/gemini-script.js';
 
 const note = 'Private note about Maya and Friday at 9.';
 const secret = 'test-secret-that-must-never-appear';
