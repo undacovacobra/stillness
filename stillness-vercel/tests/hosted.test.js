@@ -97,8 +97,8 @@ test('Kokoro trial starts as soon as its first chapter is ready and reuses its n
   await p.run('prepareSessionNarration(state.session)');
   assert.equal(p.run('state.session.narrationReady'), true);
   assert.equal(p.run('state.session.narrationClips[1].length'), 0);
-  const preload = p.run('loadKokoroChapter(state.session, 1)');
-  const playback = p.run('loadKokoroChapter(state.session, 1)');
+  const preload = p.run('loadKokoroClip(state.session, 1, 0)');
+  const playback = p.run('loadKokoroClip(state.session, 1, 0)');
   assert.equal(preload, playback);
   resolveNext();
   await playback;

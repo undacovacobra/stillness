@@ -3,7 +3,7 @@
     signal.throwIfAborted();
     const request = new AbortController();
     const cancel = () => request.abort(signal.reason);
-    const timeout = setTimeout(() => request.abort(), 35_000);
+    const timeout = setTimeout(() => request.abort(), 40_000);
     signal.addEventListener('abort', cancel, { once: true });
     try {
       const response = await fetch('/api/kokoro', {
