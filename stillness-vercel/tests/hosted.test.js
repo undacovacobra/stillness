@@ -77,6 +77,47 @@ function page(path, fetch, stored = new Map()) {
 }
 
 for (const path of ['../index.html', '../public/index.html']) {
+  test(`${path}: sparse and spacious sessions never stretch a pause beyond one minute`, () => {
+    const p = page(path, async () => {});
+    for (const mode of ['natural','every','minimal']) {
+      for (const [duration,detail,pace] of [[60,'minimal',1.45],[30,'wordy',0.65],[10,'average',1],[1,'wordy',1.45],[3,'minimal',1]]) {
+        p.run(`state.durationMin=${duration};state.wordiness='${detail}';state.pausePace=${pace};state.pauseMode='${mode}'`);
+        const plan = p.run('getActiveSessionPlan()');
+        assert.ok(plan.chapters.every(ch => Number.isInteger(ch.pauseSec) && ch.pauseSec >= 0 && ch.pauseSec <= 60), `${mode}/${duration}/${detail}/${pace}: ${plan.chapters.map(ch => ch.pauseSec)}`);
+      }
+    }
+  });
+
+  test(`${path}: natural pauses give more room to practice than to settling and closing`, () => {
+    const p = page(path, async () => {});
+    p.run(`state.durationMin=30;state.wordiness='minimal';state.pausePace=1;state.pauseMode='natural'`);
+    const plan = p.run('getActiveSessionPlan()');
+    assert.ok(plan.chapters[0].pauseSec <= 12);
+    assert.ok(plan.chapters.at(-1).pauseSec <= 8);
+    assert.ok(plan.chapters[1].pauseSec > plan.chapters[0].pauseSec);
+    const normal = plan.chapters.find(ch=>ch.cueType==='practice').pauseSec;
+    p.run(`state.pauseMode='minimal'`);
+    assert.ok(p.run('getActiveSessionPlan().chapters.find(ch=>ch.cueType==="practice").pauseSec') < normal);
+  });
+
+  test(`${path}: an older saved session keeps its script while oversized pauses are shortened`, () => {
+    const p = page(path, async () => {});
+    p.run(`state.durationMin=30;state.session.phase='done';state.session.totalEstSec=1200;
+      state.session.chapters=[{text:'Exact saved practice.',cueType:'practice',pauseSec:300}];
+      saveCompletedSession();restoreSavedSession(readSessionLibrary()[0].id,false);`);
+    const plan = p.run('getActiveSessionPlan()');
+    assert.equal(plan.chapters[0].text, 'Exact saved practice.');
+    assert.ok(plan.chapters[0].pauseSec <= 60);
+    assert.ok(plan.totalEstSec < 1200);
+  });
+
+  test(`${path}: the playback timer clamps even an uncapped legacy chapter`, () => {
+    const p = page(path, async () => {});
+    p.run(`state.session.active=true;state.session.chapters=[{text:'Rest here.',cueType:'practice',cueLabel:'Reflection',pauseSec:999}];beginChapterPause();`);
+    assert.ok(p.run('state.session.pauseTotalSec') <= 60);
+    assert.ok(p.run('state.session.pauseRemainingSec') <= 60);
+  });
+
   test(`${path}: a phone interruption pauses progress and offers audio recovery`, () => {
     const p = page(path, async () => {});
     p.run(`state.session.active=true; state.session.phase='speaking'; voicePlayer.paused=true; voicePlayer.ended=false;`);

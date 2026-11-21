@@ -1337,7 +1337,7 @@
         else if (idx === rawChapters.length - 1) pauseSec = info.emotionKey === 'sleep' ? 6 : 4;
         else if (state.pauseMode === 'minimal' && ch.cueType === 'settle') pauseSec = 2;
         else pauseSec = Math.max(4, pauseSec);
-        return { ...ch, pauseSec };
+        return { ...ch, pauseSec: boundedPauseSeconds(ch, pauseSec) };
       });
 
       const totalEstSec = Math.max(60, chapters.reduce((acc, ch) => acc + estSpokenPerChapter + ch.pauseSec, 3));
@@ -1367,14 +1367,31 @@
       } else if (state.loadedSession?.cacheKey !== currentScriptCacheKey() && state.aiGeneratedChapters && state.aiScriptCacheKey === currentScriptCacheKey() && state.aiGeneratedChapters.length === plan.chapters.length) {
         plan.chapters = plan.chapters.map((ch, i) => ({ ...ch, text: state.aiGeneratedChapters[i] }));
       }
-      return state.loadedSession?.cacheKey === currentScriptCacheKey() ? plan : rebalancePlanTiming(plan);
+      if (state.loadedSession?.cacheKey === currentScriptCacheKey()) {
+        const previousPauses = plan.chapters.reduce((sum, ch) => sum + (Number(ch.pauseSec) || 0), 0);
+        plan.chapters = plan.chapters.map(ch => ({ ...ch, pauseSec: boundedPauseSeconds(ch, ch.pauseSec) }));
+        const pauses = plan.chapters.reduce((sum, ch) => sum + ch.pauseSec, 0);
+        plan.totalEstSec = Math.max(3, (Number(plan.totalEstSec) || 3) - previousPauses) + pauses;
+        return plan;
+      }
+      return rebalancePlanTiming(plan);
+    }
+
+    function boundedPauseSeconds(chapter, seconds) {
+      const pace = Math.max(0.5, Math.min(1.5, Number(state.pausePace) || 1));
+      const flow = state.pauseMode === 'minimal' ? 0.65 : 1;
+      // Cue-specific ceilings keep transitions brief and leave room to practice.
+      const ceilings = { settle: 10, breath3: 32, experiential: 30, practice: 40, close: 6 };
+      const ceiling = Math.min(60, Math.round((ceilings[chapter.cueType] || 40) * pace * flow));
+      const value = Number(seconds);
+      return Number.isFinite(value) ? Math.max(0, Math.min(ceiling, Math.round(value))) : 0;
     }
 
     function rebalancePlanTiming(plan) {
       const spokenSec = plan.chapters.reduce((sum, ch) => sum + Math.ceil(ch.text.trim().split(/\s+/).length * 60 / 100), 0);
       const budget = Math.max(plan.chapters.length * 4, state.durationMin * 60 - spokenSec - 3);
       const weights = plan.chapters.reduce((sum, ch) => sum + (ch.pauseSec || 4), 0);
-      plan.chapters = plan.chapters.map(ch => ({ ...ch, pauseSec: Math.max(ch.cueType === 'breath3' ? 24 : 4, Math.round(budget * (ch.pauseSec || 4) / weights)) }));
+      plan.chapters = plan.chapters.map(ch => ({ ...ch, pauseSec: boundedPauseSeconds(ch, Math.max(ch.cueType === 'breath3' ? 24 : 4, Math.round(budget * (ch.pauseSec || 4) / weights))) }));
       plan.totalEstSec = spokenSec + plan.chapters.reduce((sum, ch) => sum + ch.pauseSec, 0) + 3;
       return plan;
     }
@@ -2136,6 +2153,8 @@
         plan = await maybeEnhanceWithAI(plan);
         if (!session.active || state.session !== session) return;
         state.session.chapters = plan.chapters;
+        state.session.totalEstSec = plan.totalEstSec;
+        document.getElementById('totalTimeDisplay').textContent = formatTime(plan.totalEstSec);
       }
 
       sessionTicker = setInterval(() => {
@@ -2203,9 +2222,11 @@
       if (!ch) return;
 
       const isLast = state.session.chapterIndex >= state.session.chapters.length - 1;
+      const pauseSec = boundedPauseSeconds(ch, ch.pauseSec);
+      if (pauseSec === 0) { advanceToNextChapter(); return; }
       state.session.phase = 'pausing';
-      state.session.pauseTotalSec = ch.pauseSec;
-      state.session.pauseRemainingSec = ch.pauseSec;
+      state.session.pauseTotalSec = pauseSec;
+      state.session.pauseRemainingSec = pauseSec;
       state.session.breathTick = 0;
 
       if (!isLast) {

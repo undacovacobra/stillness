@@ -31,3 +31,7 @@ Previewing a voice also selects it for the session. Switching previews cancels o
 Background recordings are served from `public/audio` with [recording credits](public/audio/credits.md), so playback does not depend on another media host's rate limits. Phone-blocked narration is retained for **Resume Audio**; the session clock waits for narration and stops during audio failures. Long chapters are spoken in smaller sequential pieces without changing the script.
 
 Google usage limits return HTTP 429 with a specific voice or script code and `Retry-After`, without trying every model again. Server diagnostics include status and model only, never personal notes or credentials.
+
+## Pauses
+
+Silent practice pauses never exceed 60 seconds, including older library sessions. Openings and closings use short transitions; breathing and reflection have longer cue-specific allowances. Brief, Balanced, Spacious, and Minimal Flow still shape the pacing within that ceiling. Unused target time is not padded with excessive silence, so sparse sessions may show a shorter estimated runtime.
