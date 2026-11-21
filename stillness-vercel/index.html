@@ -35,12 +35,9 @@
         <h1 id="memberAuthTitle" tabindex="-1">Welcome to Stillness</h1>
         <p id="memberAuthLead" class="member-lede">Sign in for a meditation made around you.</p>
         <div id="memberOAuth" class="member-oauth" hidden>
-          <div class="member-oauth-buttons" role="group" aria-label="Sign-in providers">
-            <button id="memberOAuthGoogle" type="button" data-member-oauth="google" disabled>
+          <div class="member-oauth-buttons">
+            <button id="memberOAuthGoogle" type="button" aria-describedby="memberOAuthNotice" disabled>
               <img src="./public/design/google-sign-in.png" alt="Sign in with Google" width="180" height="40">
-            </button>
-            <button id="memberOAuthApple" type="button" data-member-oauth="apple" disabled>
-              <img src="./public/design/apple-sign-in.png" alt="Sign in with Apple" width="180" height="40">
             </button>
           </div>
           <p id="memberOAuthNotice" class="member-oauth-notice" role="status"></p>
@@ -61,7 +58,7 @@
           <button id="memberAuthForgot" class="text-action member-inline" type="button">Forgot password?</button>
           <button id="memberResend" class="text-action member-inline" type="button" hidden>Resend verification</button>
         </div>
-        <p class="member-offer">10 days free with a card, then $11.99 USD per month. Cancel through your profile.</p>
+        <p class="member-offer">Try Stillness for 10 days with 15 narrated minutes. No card required.</p>
       </div>
 
       <div id="memberWelcome" hidden>
@@ -93,7 +90,7 @@
         <h1 id="memberProfileTitle" tabindex="-1">Your profile</h1>
         <section class="member-profile-section" aria-labelledby="memberPlanTitle">
           <h2 id="memberPlanTitle">Membership</h2>
-          <p id="memberPlanStatus" class="member-lede"></p>
+          <p id="memberPlanStatus" class="member-lede" tabindex="-1"></p>
           <p id="memberPlanDate" class="member-detail"></p>
           <p id="memberPlanDescription" class="member-detail"></p>
           <dl id="memberBalance" class="member-balance" hidden>
@@ -102,7 +99,8 @@
           </dl>
           <p class="member-detail">Only generated narration uses minutes, including voice previews. Quiet pauses and background sounds are included.</p>
           <div class="member-actions">
-            <button id="memberSubscribe" class="main-button" data-billing="subscribe" type="button" hidden>Start 10-day trial</button>
+            <button id="memberStartTrial" class="main-button" type="button" hidden>Start 10-day trial</button>
+            <button id="memberSubscribe" class="main-button" data-billing="subscribe-paid" type="button" hidden>Subscribe · $11.99/month</button>
             <button id="memberTopup" class="main-button" data-billing="topup" type="button" hidden>Buy 60 minutes · $4.99</button>
             <button id="memberPortal" class="text-action member-inline" data-billing="portal" type="button" hidden>Manage billing and cancellation</button>
           </div>

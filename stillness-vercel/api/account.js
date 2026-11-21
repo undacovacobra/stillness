@@ -3,12 +3,13 @@ import {
   fail, hasRecovery, isVerified, ownerAccount, pkce, readCookie, requireSameOrigin,
   setMemberSession, setRecovery, writeCookie
 } from '../lib/member-auth.js';
-import { getMember, listMembers, saveProfile } from '../lib/member-store.js';
+import { getMember, listMembers, saveProfile, startFreeTrial } from '../lib/member-store.js';
+import { trialIdentifiers } from '../lib/member-trial.js';
 
 const signedOut = { user: null };
 const recoveryAccessCookie = 'stillness_recovery_access';
 const temporary = 'Account service is temporarily unavailable. Please try again.';
-const oauthProviders = ['google', 'apple'];
+const oauthProviders = ['google'];
 
 async function availableProviders() {
   const settings = await authRequest('/settings');
@@ -17,15 +18,14 @@ async function availableProviders() {
 }
 
 async function beginOAuth(req, res, provider) {
-  if (!oauthProviders.includes(provider)) return fail(res, 400, 'Choose Google or Apple to sign in.');
+  if (!oauthProviders.includes(provider)) return fail(res, 400, 'Choose Google to continue with a provider.');
   const origin = appOrigin(req);
   if (req.headers?.origin && req.headers.origin !== origin) {
-    return fail(res, 400, 'Open the direct Stillness link to use Google or Apple sign-in.');
+    return fail(res, 400, 'Open the direct Stillness link to use Google sign-in.');
   }
   const enabled = await availableProviders();
   if (!enabled[provider]) {
-    const name = provider === 'google' ? 'Google' : 'Apple';
-    return fail(res, 503, `${name} sign-in is awaiting setup. You can continue with email.`);
+    return fail(res, 503, 'Google sign-in is awaiting setup. You can continue with email.');
   }
   const callback = new URL('/', origin);
   callback.searchParams.set('flow', 'oauth');
@@ -60,7 +60,8 @@ function publicData(member) {
   return {
     user_id, name, goal, status, period_ends_at, trial_used, remaining_seconds,
     topup_seconds, last_used_at, cancel_at_period_end,
-    billing_customer: Boolean(stripe_customer_id), has_subscription: Boolean(subscription_id)
+    billing_customer: Boolean(stripe_customer_id), has_subscription: Boolean(subscription_id),
+    trial_eligible: !trial_used && status === 'inactive' && !subscription_id
   };
 }
 
@@ -217,6 +218,24 @@ async function updatePassword(req, res, session, password, currentPassword) {
   return res.status(200).json({ ...signedOut, message: 'Password updated. Sign in with your new password.' });
 }
 
+async function beginFreeTrial(req, res, user) {
+  const ids = trialIdentifiers(req, res);
+  if (!ids) return fail(res, 503, 'Your connection could not be verified for a trial. Try again from your normal browser.');
+  await getMember(user.id, user.email);
+  const claim = await startFreeTrial(user.id, ids);
+  if (claim?.started) return res.status(200).json(await snapshot(user));
+  if (claim?.reason === 'device_limit') {
+    return fail(res, 409, 'A free trial was already used in this browser. Sign in to the account you used or choose a membership.', 'trial_device_limit');
+  }
+  if (claim?.reason === 'network_limit') {
+    return fail(res, 429, 'This network has reached its free-trial limit. Sign in to continue an existing trial or choose a membership.', 'trial_network_limit');
+  }
+  if (claim?.reason === 'used') {
+    return fail(res, 409, 'This account has already used its free trial. You can subscribe from Profile.', 'trial_already_used');
+  }
+  return fail(res, 409, 'This account is not eligible for a new free trial.', 'trial_ineligible');
+}
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'private, no-store');
   if (!['GET', 'POST'].includes(req.method)) return fail(res, 405, 'Method not allowed.');
@@ -253,6 +272,7 @@ export default async function handler(req, res) {
     if (!session) return fail(res, 401, 'Sign in to continue.');
     if (action === 'password') return await updatePassword(req, res, session, password, body.currentPassword);
     if (session.recovery) return fail(res, 403, 'Choose a new password to finish recovering your account.');
+    if (action === 'trial') return await beginFreeTrial(req, res, session.user);
     if (action === 'profile') {
       const name = typeof body.name === 'string' ? body.name.trim() : '';
       const goal = typeof body.goal === 'string' ? body.goal.trim() : '';

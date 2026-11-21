@@ -38,10 +38,6 @@ function mock(overrides = {}) {
     if (path === 'checkout/sessions' && method === 'GET') return { data: [] };
     if (path === 'checkout/sessions') return { url: 'https://checkout.stripe.com/c/session' };
     if (path === 'checkout/sessions/cs_test_setup') return completedSetup;
-    if (path === 'setup_intents/seti_1') return {
-      id: 'seti_1', customer: 'cus_1', status: 'succeeded', usage: 'off_session', payment_method: 'pm_1',
-    };
-    if (path === 'payment_methods/pm_1') return { id: 'pm_1', customer: 'cus_1', type: 'card', card: { fingerprint: 'fp_1' } };
     if (path === 'subscriptions/sub_123') return paidSubscription;
     if (path === 'invoices/' + invoiceId) return paidInvoice;
     throw new Error('unexpected Stripe request ' + path);
@@ -49,7 +45,6 @@ function mock(overrides = {}) {
   const store = {
     getMember: async () => ({ ...account }),
     findMemberByCustomer: async () => ({ ...account }),
-    claimTrialCard: async () => ({ applied: false, reason: 'duplicate_trial' }),
     applyBillingEvent: async value => { writes.push(value); return { applied: true }; },
     ...overrides.store,
   };
@@ -68,58 +63,73 @@ test('verifies exact raw Stripe payload and accepts signature rotation', () => {
   assert.throws(() => verifyStripeWebhook(raw, `t=${t0},v1=${digest}`, 'whsec_test', (t0 + 301) * 1000));
 });
 
-test('putting a card on file creates a setup checkout without charging or opening a subscription', async () => {
+test('legacy card-trial checkout requests are rejected before reaching Stripe', async () => {
   const { billing, requests } = mock();
-  assert.equal(await billing.checkout(user, 'subscribe', 'https://stillness.example'), 'https://checkout.stripe.com/c/session');
-  const session = requests.find(req => req.path === 'checkout/sessions' && req.method === 'POST');
-  assert.equal(session.body.mode, 'setup');
-  assert.equal(session.body['line_items[0][price]'], undefined);
-  assert.match(session.body['custom_text[submit][message]'], /\$11\.99/);
-  assert.equal(requests.some(req => req.path === 'subscriptions' && req.method === 'POST'), false);
+  await assert.rejects(billing.checkout(user, 'subscribe', 'https://stillness.example'), { status: 400 });
+  assert.deepEqual(requests, []);
 });
 
-test('an already claimed card never opens a recurring subscription for the second account', async () => {
-  const { billing, requests, writes } = mock();
+test('even a previously eligible stale Stripe setup event cannot create a subscription', async () => {
+  const { billing, requests, writes } = mock({
+    store: { claimTrialCard: async () => assert.fail('obsolete trial attempted to claim a card') },
+  });
   await billing.webhook(event('checkout.session.completed', completedSetup));
-  assert.equal(requests.some(req => req.path === 'subscriptions' && req.method === 'POST'), false);
-  assert.equal(writes.length, 0);
+  assert.deepEqual(requests, []);
+  assert.deepEqual(writes, []);
 });
 
-test('trial creation reserves the card before creating a ten-day subscription and recording access', async () => {
-  const order = [];
+test('a sparse older checkout event is ignored when Stripe confirms it was setup-only', async () => {
+  const { billing, requests, writes } = mock({
+    store: { findMemberByCustomer: async () => assert.fail('setup-only Checkout must not process a member') },
+  });
+  await billing.webhook(event('checkout.session.completed', { id: completedSetup.id }));
+  assert.deepEqual(requests.map(({ method, path }) => [method, path]), [['GET', 'checkout/sessions/cs_test_setup']]);
+  assert.deepEqual(writes, []);
+});
+
+test('a member with a cardless trial can explicitly opt in to immediately paid checkout', async () => {
+  const trialMember = {
+    ...account, stripe_customer_id: null, status: 'trialing', subscription_id: null, trial_used: true,
+    period_ends_at: new Date((t0 + 10 * 86400) * 1000).toISOString(),
+  };
+  const { billing, requests } = mock({
+    store: {
+      getMember: async () => trialMember,
+      setStripeCustomer: async (id, customer) => ({ ...trialMember, user_id: id, stripe_customer_id: customer }),
+    },
+    stripe: ([method, path, ...rest], fallback) => path === 'customers' && method === 'POST'
+      ? { id: 'cus_1' } : fallback(method, path, ...rest),
+  });
+  assert.equal(await billing.checkout(user, 'subscribe-paid', 'https://stillness.example'), 'https://checkout.stripe.com/c/session');
+  const session = requests.find(request => request.path === 'checkout/sessions' && request.method === 'POST');
+  assert.equal(session.body.mode, 'subscription');
+  assert.equal(session.body['line_items[0][price]'], 'price_month');
+  assert.equal(session.body['line_items[0][quantity]'], 1);
+  assert.equal(Object.keys(session.body).some(key => /trial|setup_intent/i.test(key)), false);
+  await assert.rejects(billing.checkout(user, 'topup', 'https://stillness.example'), { status: 409 });
+});
+
+test('an obsolete open setup Checkout does not block opt-in paid Checkout', async () => {
+  const { billing } = mock({
+    stripe: ([method, path, ...rest], fallback) => path === 'checkout/sessions' && method === 'GET'
+      ? { data: [{ ...completedSetup, status: 'open' }] } : fallback(method, path, ...rest),
+  });
+  assert.equal(await billing.checkout(user, 'subscribe-paid', 'https://stillness.example'), 'https://checkout.stripe.com/c/session');
+});
+
+test('Stripe still reconciles an existing legacy trial subscription without creating another', async () => {
   const trial = {
     ...paidSubscription, status: 'trialing', trial_start: t0, trial_end: t0 + 10 * 86400,
     metadata: { stillness_member: user.id, stillness_trial_claim: 'seti_1' },
   };
-  const { billing } = mock({
-    stripe: async (args, fallback) => {
-      const [method, path, body, key] = args;
-      if (method === 'POST' && path === 'subscriptions') {
-        order.push('stripe');
-        assert.equal(body.trial_period_days, 10);
-        assert.equal(body.default_payment_method, 'pm_1');
-        assert.match(key, /seti_1/);
-        return trial;
-      }
-      return fallback(...args);
-    },
-    store: {
-      claimTrialCard: async (...args) => {
-        order.push('claim');
-        assert.deepEqual(args, [user.id, 'cus_1', 'seti_1', 'fp_1']);
-        return { applied: true };
-      },
-      applyBillingEvent: async value => {
-        order.push('grant');
-        assert.equal(value.entitlement, 'trial');
-        assert.equal(value.trialClaimId, 'seti_1');
-        assert.equal((Date.parse(value.periodEndsAt) - Date.parse(value.periodStartsAt)) / 86400000, 10);
-        return { applied: true };
-      },
-    },
+  const { billing, requests, writes } = mock({
+    stripe: ([method, path, ...rest], fallback) => path === 'subscriptions/sub_123' && method === 'GET'
+      ? trial : fallback(method, path, ...rest),
   });
-  await billing.webhook(event('checkout.session.completed', completedSetup));
-  assert.deepEqual(order, ['claim', 'stripe', 'grant']);
+  await billing.webhook(event('customer.subscription.updated', trial));
+  assert.equal(writes[0].entitlement, 'trial');
+  assert.equal(writes[0].trialClaimId, 'seti_1');
+  assert.deepEqual(requests.filter(request => request.method === 'POST'), []);
 });
 
 test('renewal requires a current paid invoice for the configured subscription', async () => {
@@ -168,10 +178,10 @@ test('test and live Stripe events are never interchangeable', async () => {
   assert.equal(requests.length, 0);
 });
 
-test('competing membership checkouts share a Stripe idempotency key until a new attempt exists', async () => {
+test('repeated paid membership checkouts share a Stripe idempotency key until a new attempt exists', async () => {
   const { billing, requests } = mock();
   await Promise.all([
-    billing.checkout(user, 'subscribe', 'https://stillness.example'),
+    billing.checkout(user, 'subscribe-paid', 'https://stillness.example'),
     billing.checkout(user, 'subscribe-paid', 'https://stillness.example'),
   ]);
   const posted = requests.filter(req => req.path === 'checkout/sessions' && req.method === 'POST');
@@ -211,7 +221,7 @@ test('anonymous and cross-origin requests cannot start a billing action', async 
   assert.equal(res.code, 401);
 });
 
-test('Vercel Stripe endpoint checks the untouched Request body before processing', async t => {
+test('Vercel Stripe verifies raw signatures and safely acknowledges a stale setup completion', async t => {
   const webhookSecret = ['whsec', 'fixture'].join('_');
   const settings = {
     STRIPE_SECRET_KEY: ['sk', 'test', 'fixture'].join('_'),
@@ -228,12 +238,14 @@ test('Vercel Stripe endpoint checks the untouched Request body before processing
     }
   });
   const timestamp = Math.floor(Date.now() / 1000);
-  const event = { id: 'evt_nothing', created: timestamp, livemode: false, type: 'ping', data: { object: { id: 'acct_1' } } };
-  const body = JSON.stringify(event, null, 2);
+  const staleSetup = { ...event('checkout.session.completed', completedSetup), created: timestamp };
+  const transport = t.mock.method(globalThis, 'fetch', async () => assert.fail('obsolete Stripe setup made a network request'));
+  const body = JSON.stringify(staleSetup, null, 2);
   const digest = createHmac('sha256', webhookSecret).update(`${timestamp}.${body}`).digest('hex');
   const headers = { 'stripe-signature': `t=${timestamp},v1=${digest}` };
   const checked = await stripeWebhook(new Request('https://stillness.example/api/stripe-webhook', { method: 'POST', body, headers }));
   assert.equal(checked.status, 200);
   const altered = await stripeWebhook(new Request('https://stillness.example/api/stripe-webhook', { method: 'POST', body: body + ' ', headers }));
   assert.equal(altered.status, 400);
+  assert.equal(transport.mock.callCount(), 0);
 });

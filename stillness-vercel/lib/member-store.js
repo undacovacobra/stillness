@@ -28,6 +28,14 @@ export function getMember(userId, verifiedEmail = null) {
   return membershipRpc('stillness_get_member', { p_user_id: userId, p_email: verifiedEmail });
 }
 
+export function startFreeTrial(userId, { deviceHash, networkHash }) {
+  return membershipRpc('stillness_start_free_trial', {
+    p_user_id: userId,
+    p_device_hash: deviceHash,
+    p_network_hash: networkHash,
+  });
+}
+
 export function saveProfile(userId, { name, goal }) {
   return membershipRpc('stillness_save_profile', { p_user_id: userId, p_name: name, p_goal: goal });
 }

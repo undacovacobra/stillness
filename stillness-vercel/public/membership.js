@@ -21,9 +21,9 @@
   let snapshot = { user: null };
   let visiblePage = 'loading';
   let authMode = 'login';
-  let oauthProviders = { google: false, apple: false };
+  let googleAvailable = false;
   let oauthPending = false;
-  let oauthNotice = '';
+  let oauthNotice = 'Checking Google sign-in…';
   let pendingGenerationProblem = '';
   let refreshTimer;
   let refreshRequest;
@@ -33,6 +33,12 @@
 
   function memberIsActive(member) {
     return member && plans.has(member.status) && Date.parse(member.period_ends_at) > Date.now();
+  }
+
+  function trialCanStart(member) {
+    if (!member || memberIsActive(member) || member.trial_used) return false;
+    if (typeof member.trial_eligible === 'boolean') return member.trial_eligible;
+    return member.status === 'inactive';
   }
 
   function isRecovery() {
@@ -72,16 +78,20 @@
   function describePlan(member) {
     if (memberIsActive(member)) return member.status === 'trialing' ? '10-day trial' : 'Stillness monthly · $11.99';
     if (member?.status === 'past_due') return 'Payment needs attention';
-    if (member?.status === 'trial_ineligible') return 'This card has already been used for a Stillness trial';
     if (member?.status === 'canceled' || member?.cancel_at_period_end) return 'Membership ended';
     if (member?.status === 'incomplete') return 'Payment setup pending';
+    if (member?.trial_used && !member?.has_subscription) return 'Trial ended';
     return 'No active membership';
   }
 
   function generationProblem() {
     if (!snapshot.user || isRecovery()) return 'Sign in to start a meditation.';
     if (!snapshot.member?.name || !snapshot.member?.goal) return 'Complete your welcome to start a meditation.';
-    if (!memberIsActive(snapshot.member)) return 'Start a trial or membership to generate narration.';
+    if (!memberIsActive(snapshot.member)) {
+      return trialCanStart(snapshot.member)
+        ? 'Start your free trial to generate narration.'
+        : 'An active membership is needed to generate narration.';
+    }
     if (remainingSeconds(snapshot.member) <= 0) return 'You’ve used your narration allowance.';
     return '';
   }
@@ -101,7 +111,9 @@
       options.headers = { 'Content-Type': 'application/json' };
       options.body = JSON.stringify(payload);
     }
-    const response = await fetch(path, options);
+    const response = await fetch(path, options).catch(() => {
+      throw new Error('Stillness couldn’t connect. Check your connection and try again.');
+    });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(typeof body.error === 'string' ? body.error : 'Stillness couldn’t complete that request. Try again.');
     return body;
@@ -122,6 +134,7 @@
     for (const id of ['beginMeditationBtn', 'beginFromScriptBtn']) {
       byId(id).disabled = Boolean(problem);
     }
+    text('membershipStudioProfile', trialCanStart(member) ? 'View free trial' : 'Open membership settings');
     reveal('membershipStudioProfile', Boolean(problem) && Boolean(snapshot.user));
     reveal('membershipScriptProfile', Boolean(problem) && Boolean(snapshot.user));
     reveal('memberAdminButton', snapshot.owner === true);
@@ -130,26 +143,36 @@
   function renderBilling() {
     const member = snapshot.member;
     const eligible = memberIsActive(member);
-    const trial = member?.status === 'trialing';
-    const previouslyTried = Boolean(member?.trial_used || member?.status === 'trial_ineligible');
-    const delinquent = ['past_due', 'incomplete', 'unpaid'].includes(member?.status);
+    const trial = eligible && member.status === 'trialing';
+    const paid = eligible && member.status === 'active';
+    const stripeTrial = trial && member.has_subscription;
+    const canStart = trialCanStart(member);
+    const paymentPending = ['past_due', 'incomplete', 'unpaid'].includes(member?.status);
+    const hasBilling = Boolean(member?.billing_customer || member?.has_subscription);
     const endDate = readableDate(member?.period_ends_at);
+
     text('memberPlanStatus', describePlan(member));
     text('memberPlanDate', eligible && endDate
-      ? member?.cancel_at_period_end ? `Access ends ${endDate}.` : trial ? `First charge ${endDate} unless canceled.` : `Included minutes reset ${endDate}.`
+      ? trial ? `Trial ends ${endDate}.`
+        : member.cancel_at_period_end ? `Access ends ${endDate}.` : `Included minutes reset ${endDate}.`
       : '');
-    text('memberPlanDescription', eligible
-      ? trial ? 'This trial includes 15 narrated minutes.' : 'Your subscription includes 120 narrated minutes per paid period.'
-      : previouslyTried ? 'Subscribe for 120 narrated minutes per month.' : 'The 10-day trial includes 15 narrated minutes. A card is required. After 10 days, pay $11.99 per month unless canceled.');
-    reveal('memberBalance', eligible || remainingSeconds(member) > 0);
-    text('memberIncluded', readableTime(member?.remaining_seconds));
+    text('memberPlanDescription', trial
+      ? stripeTrial ? 'Manage your trial and renewal in billing.' : 'Your trial includes 15 narrated minutes and ends automatically.'
+      : paid
+        ? 'Your subscription includes 120 narrated minutes per paid period.'
+        : canStart
+          ? 'Try 15 narrated minutes over 10 days. No card required. The trial ends automatically.'
+          : 'Subscribe for 120 narrated minutes per month.');
+    reveal('memberBalance', eligible || Number(member?.topup_seconds) > 0);
+    text('memberIncluded', readableTime(eligible ? member.remaining_seconds : 0));
     text('memberTopupLeft', readableTime(member?.topup_seconds));
+    byId('memberTopupLeft').parentElement.hidden = trial && !member.topup_seconds;
+
+    reveal('memberStartTrial', canStart);
     const subscribe = byId('memberSubscribe');
-    subscribe.dataset.billing = previouslyTried ? 'subscribe-paid' : 'subscribe';
-    subscribe.textContent = previouslyTried ? 'Subscribe · $11.99/month' : 'Start 10-day trial';
-    const hasBilling = Boolean(member?.billing_customer || member?.has_subscription);
-    reveal('memberSubscribe', !eligible && !(delinquent && hasBilling));
-    reveal('memberTopup', eligible && member?.status === 'active');
+    subscribe.className = canStart || trial ? 'text-action member-inline' : 'main-button';
+    reveal('memberSubscribe', !paid && !stripeTrial && !(paymentPending && hasBilling));
+    reveal('memberTopup', paid);
     reveal('memberPortal', hasBilling);
   }
 
@@ -202,42 +225,39 @@
   }
 
   function renderOAuthOptions() {
-    const supportsOAuth = ['login', 'signup'].includes(authMode);
-    reveal('memberOAuth', supportsOAuth);
-    for (const button of document.querySelectorAll('[data-member-oauth]')) {
-      button.disabled = oauthPending || oauthProviders[button.dataset.memberOauth] !== true;
-    }
+    reveal('memberOAuth', ['login', 'signup'].includes(authMode));
+    byId('memberOAuthGoogle').disabled = oauthPending || !googleAvailable;
     text('memberOAuthNotice', oauthNotice);
   }
 
   async function loadOAuthOptions() {
     try {
-      oauthProviders = await apiRequest(`${accountPath}?view=providers`);
-      const pending = [!oauthProviders.google && 'Google', !oauthProviders.apple && 'Apple'].filter(Boolean);
-      oauthNotice = pending.length ? `${pending.join(' and ')} sign-in is awaiting setup.` : '';
+      const options = await apiRequest(`${accountPath}?view=providers`);
+      googleAvailable = options.google === true;
+      oauthNotice = googleAvailable ? '' : 'Google sign-in is currently unavailable. You can continue with email.';
     } catch {
-      oauthNotice = 'Google and Apple sign-in are temporarily unavailable.';
+      oauthNotice = 'Couldn’t check Google sign-in. You can continue with email.';
     }
     renderOAuthOptions();
   }
 
-  async function signInWithProvider(button) {
-    const provider = button.dataset.memberOauth;
-    if (oauthPending || oauthProviders[provider] !== true) return;
+  async function signInWithGoogle() {
+    if (oauthPending || !googleAvailable) return;
     oauthPending = true;
     text('memberAuthFeedback', '');
     renderOAuthOptions();
     try {
-      const result = await apiRequest(accountPath, { action: 'oauth', provider });
+      const result = await apiRequest(accountPath, { action: 'oauth', provider: 'google' });
       const destination = new URL(result.url);
-      if (destination.protocol !== 'https:' || destination.pathname !== '/auth/v1/authorize') {
-        throw new Error('Stillness couldn’t open the sign-in provider. Try again.');
+      if (destination.protocol !== 'https:' || destination.pathname !== '/auth/v1/authorize'
+          || destination.searchParams.get('provider') !== 'google') {
+        throw new Error('Stillness couldn’t open Google sign-in. Try again.');
       }
       window.location.assign(destination.href);
     } catch (error) {
       oauthPending = false;
       renderOAuthOptions();
-      text('memberAuthFeedback', error.message || 'Stillness couldn’t open the sign-in provider. Try again.');
+      text('memberAuthFeedback', error.message || 'Stillness couldn’t open Google sign-in. Try again.');
     }
   }
 
@@ -435,6 +455,28 @@
     });
   }
 
+  async function startTrial(button) {
+    if (!trialCanStart(snapshot.member)) return;
+    await withButton(button, 'memberBillingFeedback', async () => {
+      accountRevision++;
+      let result;
+      try {
+        result = await apiRequest(accountPath, { action: 'trial' });
+      } catch (error) {
+        void refreshAccount().catch(() => {});
+        throw error;
+      }
+      applySnapshot(result);
+      if (!memberIsActive(result.member) || result.member.status !== 'trialing') {
+        throw new Error('Stillness couldn’t confirm the trial. Check your membership and try again.');
+      }
+      if (visiblePage === 'profile') {
+        text('memberBillingFeedback', 'Your free trial has started. There’s no charge.');
+        byId('memberPlanStatus').focus();
+      }
+    });
+  }
+
   async function billingAction(button) {
     await withButton(button, 'memberBillingFeedback', async () => {
       const { url } = await apiRequest(billingPath, { action: button.dataset.billing });
@@ -572,9 +614,7 @@
     });
     byId('memberRetry').addEventListener('click', () => loadMembership());
     byId('memberAuthForm').addEventListener('submit', submitAuth);
-    for (const button of document.querySelectorAll('[data-member-oauth]')) {
-      button.addEventListener('click', () => signInWithProvider(button));
-    }
+    byId('memberOAuthGoogle').addEventListener('click', signInWithGoogle);
     window.addEventListener('pageshow', event => {
       if (event.persisted) {
         oauthPending = false;
@@ -590,6 +630,7 @@
     byId('memberBack').addEventListener('click', () => showPage(recommendedPage()));
     for (const prefix of ['Welcome', 'Profile']) byId(`member${prefix}Goal`).addEventListener('change', () => syncCustomGoal(prefix));
     for (const button of document.querySelectorAll('[data-member-logout]')) button.addEventListener('click', () => signOut(button));
+    byId('memberStartTrial').addEventListener('click', event => startTrial(event.currentTarget));
     for (const button of document.querySelectorAll('[data-billing]')) button.addEventListener('click', () => billingAction(button));
     for (const button of document.querySelectorAll('[data-member-profile]')) button.addEventListener('click', () => showProfile());
     byId('memberAdminButton').addEventListener('click', renderOwner);

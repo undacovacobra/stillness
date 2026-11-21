@@ -46,3 +46,15 @@ test('the membership clone reads and writes libraries only for the signed-in acc
   identity.current = null;
   assert.equal(run('readSessionLibrary().length'), 0);
 });
+
+test('both entry pages offer Google and email, with a separate card-free trial action', () => {
+  for (const file of ['../index.html', '../public/index.html']) {
+    const html = readFileSync(new URL(file, import.meta.url), 'utf8');
+    assert.match(html, /id="memberOAuthGoogle"[^>]*disabled/);
+    assert.match(html, /id="memberAuthForm"/);
+    assert.match(html, /id="memberStartTrial"[^>]*>Start 10-day trial/);
+    assert.match(html, /id="memberSubscribe"[^>]*data-billing="subscribe-paid"[^>]*>Subscribe · \$11\.99\/month/);
+    assert.match(html, /No card required/);
+    assert.doesNotMatch(html, /memberOAuthApple|apple-sign-in|free with a card/i);
+  }
+});

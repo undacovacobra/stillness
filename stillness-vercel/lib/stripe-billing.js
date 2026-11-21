@@ -8,7 +8,7 @@ const SUBSCRIPTION_EVENT_TYPES = new Set(['customer.subscription.updated', 'cust
 const INVOICE_EVENT_TYPES = new Set(['invoice.paid', 'invoice.payment_failed']);
 const CHECKOUT_EVENT_TYPES = new Set(['checkout.session.completed', 'checkout.session.async_payment_succeeded']);
 const CLOSED_SUBSCRIPTIONS = new Set(['canceled', 'incomplete_expired']);
-const CHECKOUT_ACTIONS = new Set(['subscribe', 'subscribe-paid', 'topup', 'portal']);
+const CHECKOUT_ACTIONS = new Set(['subscribe-paid', 'topup', 'portal']);
 
 export class BillingError extends Error {
   constructor(status, message) {
@@ -158,14 +158,12 @@ export function createBilling({ stripe, store, settings, now = Date.now }) {
       return providerUrl(portal.url, 'billing.stripe.com');
     }
 
-    if (action === 'subscribe' && member.trial_used) {
-      throw new BillingError(409, 'This account has already used a trial. You can subscribe directly.');
-    }
     const topup = action === 'topup';
     if (topup && (member.status !== 'active' || !(Date.parse(member.period_ends_at) > now()))) {
       throw new BillingError(409, 'Extra minutes are available with a paid membership.');
     }
-    if (!topup && ['trialing', 'active'].includes(member.status) && Date.parse(member.period_ends_at) > now()) {
+    const hasStripeSubscription = member.status === 'active' || (member.status === 'trialing' && member.subscription_id);
+    if (!topup && hasStripeSubscription && Date.parse(member.period_ends_at) > now()) {
       throw new BillingError(409, 'You already have a membership. Open billing to manage it.');
     }
 
@@ -178,22 +176,16 @@ export function createBilling({ stripe, store, settings, now = Date.now }) {
       }
     }
     const recent = await stripe('GET', 'checkout/sessions', { customer, limit: 100 });
-    const family = recent.data.filter(item => item.client_reference_id === user.id &&
-      (topup ? item.metadata?.stillness_action === 'topup' : ['subscribe', 'subscribe-paid'].includes(item.metadata?.stillness_action)));
+    const mode = topup ? 'payment' : 'subscription';
+    const family = recent.data.filter(item => item.client_reference_id === user.id && item.mode === mode &&
+      item.metadata?.stillness_action === action);
     const activeSession = family.find(item => item.status === 'open');
     if (activeSession) {
-      if (activeSession.metadata.stillness_action === action && activeSession.url) {
-        return providerUrl(activeSession.url, 'checkout.stripe.com');
-      }
-      throw new BillingError(409, 'A checkout is already open. Complete it or let it expire before switching options.');
+      if (activeSession.url) return providerUrl(activeSession.url, 'checkout.stripe.com');
+      throw new BillingError(409, 'A checkout is already open. Please try again shortly.');
     }
     const previous = family[0];
-    if (action === 'subscribe-paid' && !member.trial_used && previous?.mode === 'setup' &&
-        previous.status === 'complete' && previous.created * 1000 > now() - 15 * 60000) {
-      throw new BillingError(409, 'Your trial is still being checked. Please try again shortly.');
-    }
 
-    const setup = action === 'subscribe';
     const body = {
       customer,
       client_reference_id: user.id,
@@ -202,21 +194,14 @@ export function createBilling({ stripe, store, settings, now = Date.now }) {
       'payment_method_types[0]': 'card',
       success_url: returnUrl,
       cancel_url: new URL('/?billing=cancel', origin).href,
-      mode: setup ? 'setup' : topup ? 'payment' : 'subscription',
+      mode,
+      'line_items[0][price]': priceId,
+      'line_items[0][quantity]': 1,
     };
-    if (setup) {
-      body.currency = 'usd';
-      body['setup_intent_data[metadata][stillness_member]'] = user.id;
-      body['custom_text[submit][message]'] =
-        'Your card authorizes Stillness to bill $11.99 USD per month starting after your 10-day free trial. Cancel in your profile before the trial ends to avoid the first charge.';
-    } else {
-      body['line_items[0][price]'] = priceId;
-      body['line_items[0][quantity]'] = 1;
-      if (!topup) body['subscription_data[metadata][stillness_member]'] = user.id;
-    }
-    // Both membership checkout modes share an attempt key until Stripe records a
-    // session. After a completed or expired attempt, its ID seeds the next key.
-    const slot = [user.id, topup ? 'topup' : 'membership', previous?.id || 'first'].join(':');
+    if (!topup) body['subscription_data[metadata][stillness_member]'] = user.id;
+    // Previous paid sessions seed retries. The paid namespace keeps older
+    // Stripe idempotency keys for card-trial setup from blocking a purchase.
+    const slot = [user.id, topup ? 'topup' : 'paid-membership', previous?.id || 'first'].join(':');
     const session = await stripe('POST', 'checkout/sessions', body, stableKey('checkout', slot));
     return providerUrl(session.url, 'checkout.stripe.com');
   }
@@ -256,47 +241,16 @@ export function createBilling({ stripe, store, settings, now = Date.now }) {
     }
   }
 
-  async function activateTrial(event, session, member) {
-    if (!session.setup_intent) return;
-    const setup = await stripe('GET', stripePath('setup_intents', reference(session.setup_intent)));
-    if (setup.status !== 'succeeded' || setup.usage !== 'off_session' || reference(setup.customer) !== member.stripe_customer_id) return;
-    const method = await stripe('GET', stripePath('payment_methods', reference(setup.payment_method)));
-    if (method.type !== 'card' || !method.card?.fingerprint || reference(method.customer) !== member.stripe_customer_id) return;
-    await activePrice('subscribe');
-    const result = await store.claimTrialCard(member.user_id, member.stripe_customer_id, setup.id, method.card.fingerprint);
-    if (!result.applied) return;
-
-    const existing = await listSubscriptions(member.stripe_customer_id);
-    let subscription = existing.data.find(item => item.metadata?.stillness_trial_claim === setup.id &&
-      item.metadata?.stillness_member === member.user_id);
-    if (!subscription) {
-      if (existing.data.some(item => !CLOSED_SUBSCRIPTIONS.has(item.status))) return;
-      subscription = await stripe('POST', 'subscriptions', {
-        customer: member.stripe_customer_id,
-        'items[0][price]': settings.monthlyPriceId,
-        default_payment_method: method.id,
-        collection_method: 'charge_automatically',
-        'payment_settings[save_default_payment_method]': 'on_subscription',
-        trial_period_days: TRIAL_DAYS,
-        'trial_settings[end_behavior][missing_payment_method]': 'cancel',
-        'metadata[stillness_trial_claim]': setup.id,
-        'metadata[stillness_member]': member.user_id,
-      }, 'stillness-trial-' + setup.id);
-    }
-    await storeSubscription(event, member, subscription);
-  }
-
   async function completeCheckout(event, checkoutId) {
     const session = await stripe('GET', stripePath('checkout/sessions', checkoutId));
+    if (session.mode === 'setup') return;
     const customer = reference(session.customer);
     if (!customer || !session.metadata?.stillness_member) return;
     const member = await store.findMemberByCustomer(customer);
     if (!member || member.user_id !== session.client_reference_id || member.user_id !== session.metadata?.stillness_member ||
         session.status !== 'complete') return;
     const action = session.metadata.stillness_action;
-    if (action === 'subscribe' && session.mode === 'setup') {
-      await activateTrial(event, session, member);
-    } else if (action === 'subscribe-paid' && session.mode === 'subscription' && session.subscription) {
+    if (action === 'subscribe-paid' && session.mode === 'subscription' && session.subscription) {
       const subscription = await stripe('GET', stripePath('subscriptions', reference(session.subscription)));
       await storeSubscription(event, member, subscription);
     } else if (action === 'topup' && session.mode === 'payment' && session.payment_status === 'paid' &&
@@ -317,6 +271,8 @@ export function createBilling({ stripe, store, settings, now = Date.now }) {
     const object = event.data?.object;
     if (!object?.id) throw new BillingError(400, 'Stripe event has no object.');
     if (CHECKOUT_EVENT_TYPES.has(event.type)) {
+      // Completing an older setup-only Checkout must never start a paid contract.
+      if (object.mode === 'setup') return;
       await completeCheckout(event, object.id);
     } else if (SUBSCRIPTION_EVENT_TYPES.has(event.type) || INVOICE_EVENT_TYPES.has(event.type)) {
       const id = SUBSCRIPTION_EVENT_TYPES.has(event.type) ? object.id

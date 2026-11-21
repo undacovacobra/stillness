@@ -33,16 +33,16 @@ function post(body, cookies) {
   };
 }
 
-test('auth options only advertise enabled Google and Apple providers', async t => {
+test('auth options only advertise Google, even if another provider is enabled', async t => {
   config(t);
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     assert.equal(url, AUTH + '/auth/v1/settings');
     assert.equal(options.headers.apikey, 'publishable-test');
-    return Response.json({external:{google:true,apple:false,github:true},Unrelated:'omitted'});
+    return Response.json({external:{google:true,apple:true,github:true},Unrelated:'omitted'});
   });
   const res=response();
   await account({method:'GET',headers:{},query:{view:'providers'}},res);
-  assert.deepEqual(res.body,{google:true,apple:false});
+  assert.deepEqual(res.body,{google:true});
 });
 
 test('the OAuth flow uses a same-browser PKCE cookie and the ordinary verified member', async t => {
@@ -62,7 +62,8 @@ test('the OAuth flow uses a same-browser PKCE cookie and the ordinary verified m
     assert.equal(JSON.parse(options.body).p_user_id,user.id);
     return Response.json({user_id:user.id,name:'',goal:'',status:'inactive',trial_used:false});
   });
-  for (const provider of ['google','apple']) {
+  {
+    const provider = 'google';
     const start=response();
     await account(post({action:'oauth',provider}),start);
     const url=new URL(start.body.url);
@@ -87,13 +88,13 @@ test('the OAuth flow uses a same-browser PKCE cookie and the ordinary verified m
 
 test('unsupported or disabled providers cannot begin OAuth and callback needs its own verifier', async t => {
   config(t);
-  const requests = t.mock.method(globalThis,'fetch',async () => Response.json({external:{apple:false}}));
+  const requests = t.mock.method(globalThis,'fetch',async () => Response.json({external:{google:false,apple:true}}));
   const wrong=response();
-  await account(post({action:'oauth',provider:'github'}),wrong);
+  await account(post({action:'oauth',provider:'apple'}),wrong);
   assert.equal(wrong.code,400);
   assert.equal(requests.mock.callCount(),0);
   const disabled=response();
-  await account(post({action:'oauth',provider:'apple'}),disabled);
+  await account(post({action:'oauth',provider:'google'}),disabled);
   assert.equal(disabled.code,503);
   assert.equal(disabled.headers['Set-Cookie'],undefined);
   const callback=response();

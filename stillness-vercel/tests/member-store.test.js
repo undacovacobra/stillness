@@ -6,6 +6,7 @@ import {
   getMember,
   reserveUsage,
   settleUsage,
+  startFreeTrial,
 } from '../lib/member-store.js';
 
 const testUser = '254f469a-00aa-4a45-8b6c-222ee6058a17';
@@ -91,4 +92,24 @@ test('Stripe card trial stores a hash and the webhook carries the verified claim
 test('service errors propagate without revealing account data or keys', async (t) => {
   mockStore(t, [{ rpc: 'stillness_get_member', data: { hint: 'private provider details' }, status: 500 }]);
   await assert.rejects(getMember(testUser), { message: 'Membership storage is unavailable.' });
+});
+
+test('cardless trial requests pass the account ID and opaque identities to the service-only RPC', async (t) => {
+  const deviceHash = 'a'.repeat(64);
+  const networkHash = 'b'.repeat(64);
+  mockStore(t, [{
+    rpc: 'stillness_start_free_trial',
+    data: { started: true, reason: null },
+    check: (input) => assert.deepEqual(input, {
+      p_user_id: testUser,
+      p_device_hash: deviceHash,
+      p_network_hash: networkHash,
+    }),
+  }, {
+    rpc: 'stillness_start_free_trial',
+    data: { started: false, reason: 'network_limit' },
+  }]);
+  const identity = { deviceHash, networkHash, ip: '192.0.2.1', deviceId: 'private-device' };
+  assert.deepEqual(await startFreeTrial(testUser, identity), { started: true, reason: null });
+  assert.deepEqual(await startFreeTrial(testUser, identity), { started: false, reason: 'network_limit' });
 });
