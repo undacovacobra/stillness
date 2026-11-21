@@ -1,5 +1,6 @@
 {
   "cleanUrls": true,
+  "installCommand": "ONNXRUNTIME_NODE_INSTALL_CUDA=skip npm ci",
   "functions": {
     "api/kokoro.js": {
       "maxDuration": 60,
