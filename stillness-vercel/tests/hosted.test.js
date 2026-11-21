@@ -105,6 +105,28 @@ test('Kokoro trial starts as soon as its first chapter is ready and reuses its n
   assert.deepEqual(spoken, ['Notice your shoulders.', 'Let your breathing settle.']);
 });
 
+test('Kokoro keeps filling a bounded buffer while the same clip is playing', async () => {
+  const spoken = [];
+  const p = page('../public/index.html', async () => assert.fail('Unexpected AI request'), new Map(), {
+    async render(text) {
+      spoken.push(text);
+      return { mimeType: 'audio/wav', blob: new Blob([text], { type: 'audio/wav' }) };
+    }
+  });
+  p.run(`state.session = { active: true, paused: false, chapterIndex: 0,
+    chapters: ['Start.', 'Two.', 'Three.', 'Four.', 'Five.'].map(text => ({ text })),
+    settings: { voiceId: VOICES[0].id } };`);
+  await p.run('prepareSessionNarration(state.session)');
+  assert.deepEqual(spoken, ['Start.']);
+  await p.run(`playPreparedChapter(state.session, () => {})`);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(spoken, ['Start.', 'Two.', 'Three.', 'Four.']);
+  assert.equal(p.run('state.session.chapterIndex'), 0);
+  assert.equal(p.run('state.session.narrationClips[4].length'), 0);
+  p.run('clearSessionTimers()');
+  assert.equal(p.run('state.session.kokoroController.signal.aborted'), true);
+});
+
 for (const path of ['../index.html', '../public/index.html']) {
   test(`${path}: sparse and spacious sessions never stretch a pause beyond one minute`, () => {
     const p = page(path, async () => {});

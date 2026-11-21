@@ -12,7 +12,7 @@ let voiceModel;
 async function loadVoice() {
   const [model, tokenizer] = await Promise.all([
     StyleTextToSpeech2Model.from_pretrained(modelId, {
-      revision, dtype: 'q8', device: 'cpu',
+      revision, dtype: 'fp32', device: 'cpu',
       session_options: { intraOpNumThreads: 1, interOpNumThreads: 1 },
     }),
     AutoTokenizer.from_pretrained(modelId, { revision }),

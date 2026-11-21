@@ -2376,6 +2376,36 @@
       }).finally(() => { delete session.narrationRequests[key]; });
     }
 
+    async function fillKokoroBuffer(session) {
+      if (session.kokoroBufferFilling) return;
+      session.kokoroBufferFilling = true;
+      try {
+        while (session.active && session.narrationPlan && !session.kokoroController.signal.aborted) {
+          let { chapterIndex, clipIndex } = session.kokoroPlayhead;
+          if (!session.narrationClips[chapterIndex][clipIndex]) return;
+          let loadedNext = false;
+          for (let ahead = 0; ahead < 3; ahead += 1) {
+            clipIndex += 1;
+            while (chapterIndex < session.narrationPlan.length && clipIndex >= session.narrationPlan[chapterIndex].length) {
+              chapterIndex += 1;
+              clipIndex = 0;
+            }
+            if (chapterIndex >= session.narrationPlan.length) break;
+            if (session.narrationClips[chapterIndex][clipIndex]) continue;
+            await loadKokoroClip(session, chapterIndex, clipIndex);
+            loadedNext = true;
+            // Playback may have advanced while this clip was being generated.
+            break;
+          }
+          if (!loadedNext) return;
+        }
+      } catch {
+        // Playback can retry a failed prefetch when it needs the clip.
+      } finally {
+        session.kokoroBufferFilling = false;
+      }
+    }
+
     async function prepareKokoroStart(session) {
       session.narrationPlan ??= session.chapters.map(chapter => narrationPieces(chapter.text));
       session.narrationClips ??= session.narrationPlan.map(() => []);
@@ -2520,6 +2550,7 @@
         if (index === clipCount) { onDone(); return; }
         const currentIndex = index;
         if (kokoro) {
+          session.kokoroPlayhead = { chapterIndex, clipIndex: currentIndex };
           const skip = document.getElementById('skipChapterBtn');
           if (!clips[currentIndex]) {
             session.phase = 'loading-voice';
@@ -2539,9 +2570,7 @@
             if (run !== voicePlaybackRun || !session.active) return;
             skip.disabled = false;
           }
-          // Prepare only the next clip, including the first clip of the next chapter.
-          const moreInChapter = currentIndex + 1 < clipCount;
-          loadKokoroClip(session, moreInChapter ? chapterIndex : chapterIndex + 1, moreInChapter ? currentIndex + 1 : 0).catch(() => {});
+          fillKokoroBuffer(session);
         }
         const attempt = ++playAttempt;
         const failed = () => {
@@ -2845,7 +2874,7 @@
       if (notice) notice.classList.add('hidden');
       if (kokoro) {
         if (badge) badge.textContent = 'Kokoro Heart';
-        if (hint) hint.textContent = 'Kokoro Heart prepares one chapter ahead while you listen.';
+        if (hint) hint.textContent = 'Kokoro Heart keeps the next few clips ready as you listen.';
         if (statusText) statusText.textContent = 'Kokoro Heart narrates the full session at a slow pace. The trial generates narration on its server.';
         return;
       }
