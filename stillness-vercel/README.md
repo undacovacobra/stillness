@@ -20,6 +20,8 @@ Run the regression tests with `npm test` (Node.js 22 or later).
 
 Review Script automatically composes from the full personal note. The server keeps writing instructions separate from the note and validates the requested chapter count. If generation fails, the script view labels its local template as a draft and offers a retry.
 
+**Script Detail** offers **Wordy**, **Average** (default), and **Minimal**. These control how much the guide speaks, with more quiet time at lower detail levels. Changing detail generates a fresh script. The selection is saved with library sessions; older saved sessions use Average and keep their original script.
+
 After finishing or ending a session, choose **Save Session**. **Library** lets you read, replay, or delete saved practices. The exact script and the final voice, pause, and sound settings are stored in this browser on this device. Audio is generated again on replay; saved practices are not audio recordings and do not sync across devices. Clearing browser storage removes the library.
 
 Previewing a voice also selects it for the session. Switching previews cancels older requests, and studio failures are shown rather than silently substituting the same browser voice.

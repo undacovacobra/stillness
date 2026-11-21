@@ -77,6 +77,38 @@ function page(path, fetch, stored = new Map()) {
 }
 
 for (const path of ['../index.html', '../public/index.html']) {
+  test(`${path}: changing script detail requests a fresh script at the chosen level`, async () => {
+    const levels = [];
+    const p = page(path, async (url, options) => {
+      levels.push(JSON.parse(options.body).wordiness);
+      return new Response(JSON.stringify({chapters:['One','Two','Three','Four','Five']}));
+    });
+    p.run('state.intention = "Meeting Jordan tomorrow"');
+    await p.run('ensurePersonalScript()');
+    p.run('setScriptWordiness("minimal")');
+    await p.run('ensurePersonalScript()');
+    p.run('setScriptWordiness("wordy")');
+    await p.run('ensurePersonalScript()');
+    assert.deepEqual(levels, ['average','minimal','wordy']);
+  });
+
+  test(`${path}: script detail survives library save and restore`, () => {
+    const p = page(path, async () => {});
+    p.run(`state.wordiness = 'minimal'; state.session.phase = 'done';
+      state.session.chapters = [{text:'A brief practice for Jordan.'}];
+      state.session.settings = captureSessionSettings(); saveCompletedSession();
+      state.wordiness = 'wordy'; restoreSavedSession(readSessionLibrary()[0].id, false);`);
+    assert.equal(p.run('state.wordiness'), 'minimal');
+    assert.equal(p.run('getActiveSessionPlan().chapters[0].text'), 'A brief practice for Jordan.');
+  });
+
+  test(`${path}: local guidance levels have different amounts of speech at the same duration`, () => {
+    const p = page(path, async () => {});
+    const count = level => p.run(`state.wordiness = '${level}'; composePersonalChapters().chapters.map(ch => ch.text).join(' ').split(/\\s+/).length`);
+    const minimal = count('minimal'), average = count('average'), wordy = count('wordy');
+    assert.ok(minimal < average && average < wordy, `${minimal}, ${average}, ${wordy}`);
+  });
+
   test(`${path}: completed sessions survive reload with their exact script and voice`, () => {
     const stored = new Map();
     const p = page(path, async () => {}, stored);

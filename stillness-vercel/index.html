@@ -187,6 +187,12 @@
           <div id="styleGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5"></div>
         </div>
 
+        <div class="space-y-2 pt-2 border-t border-slate-700/40">
+          <h3 class="text-xs font-medium uppercase tracking-[0.12em] text-slate-300">Script Detail</h3>
+          <div id="wordinessGroup" role="group" aria-label="Script detail" class="grid grid-cols-3 gap-2"></div>
+          <p id="wordinessHint" class="text-xs text-slate-400">Balanced guidance with room to practice.</p>
+        </div>
+
         <!-- Duration & Pause Controls -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-5 pt-2 border-t border-slate-700/40">
           <!-- Duration -->
@@ -552,6 +558,7 @@
       intention: '',
       style: 'breathwork',
       durationMin: 10,
+      wordiness: 'average',
       pauseMode: 'natural', // natural | every | minimal
       pausePace: 1.0, // 0.65 brief | 1.0 balanced | 1.45 spacious
       voiceId: 'clara',
@@ -1319,11 +1326,19 @@
       });
 
       const totalEstSec = Math.max(60, chapters.reduce((acc, ch) => acc + estSpokenPerChapter + ch.pauseSec, 3));
-      return { info, chapters, totalEstSec };
+      const detailChapters = chapters.map(ch => {
+        const sentences = ch.text.match(/[^.!?]+[.!?]+(?:["']\s*)?|[^.!?]+$/g) || [ch.text];
+        if (state.wordiness === 'wordy') return ch;
+        if (state.wordiness === 'average') return { ...ch, text: sentences.slice(0, 2).join(' ').trim() };
+        const brief = sentences.find(sentence => sentence.trim().split(/\s+/).length <= 22);
+        const cue = ch.cueType === 'breath3' ? 'Notice one natural breath. Let the next exhale be easy.' : ch.cueType === 'close' ? 'Feel the room around you. Return when you are ready.' : 'Let your shoulders soften. Gently return to this moment.';
+        return { ...ch, text: brief?.trim() || cue };
+      });
+      return { info, chapters: detailChapters, totalEstSec };
     }
 
     function currentScriptCacheKey() {
-      return `${state.intention.trim()}|${state.style}|${state.durationMin}|${state.variationSeed}`;
+      return `${state.intention.trim()}|${state.style}|${state.durationMin}|${state.variationSeed}|${state.wordiness}`;
     }
 
     function getActiveSessionPlan() {
@@ -1361,7 +1376,7 @@
         return plan;
       }
       if (!personalScriptRequests.has(cacheKey)) {
-        const body = { intention: state.intention.trim(), style: MEDITATION_STYLES.find(x => x.id === state.style)?.name || 'Breathwork', durationMin: state.durationMin, chapterCount: plan.chapters.length };
+        const body = { intention: state.intention.trim(), style: MEDITATION_STYLES.find(x => x.id === state.style)?.name || 'Breathwork', durationMin: state.durationMin, chapterCount: plan.chapters.length, wordiness: state.wordiness };
         const pending = (async () => {
           const response = await fetch('/api/script', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
           if (!response.ok) throw new Error('Personal script unavailable');
@@ -1840,7 +1855,7 @@
     // Saved practices contain the script and settings; credentials never enter the library.
     const SESSION_LIBRARY_KEY = 'stillness_session_library_v1';
     function captureSessionSettings() {
-      return JSON.parse(JSON.stringify({ intention: state.intention, style: state.style, durationMin: state.durationMin, voiceId: state.voiceId, voiceVolume: state.voiceVolume, pauseMode: state.pauseMode, pausePace: state.pausePace, sounds: state.sounds, variationSeed: state.variationSeed }));
+      return JSON.parse(JSON.stringify({ intention: state.intention, style: state.style, durationMin: state.durationMin, wordiness: state.wordiness, voiceId: state.voiceId, voiceVolume: state.voiceVolume, pauseMode: state.pauseMode, pausePace: state.pausePace, sounds: state.sounds, variationSeed: state.variationSeed }));
     }
     function readSessionLibrary() {
       try {
@@ -1876,7 +1891,7 @@
         const style = MEDITATION_STYLES.find(v => v.id === entry.settings.style)?.name || 'Meditation';
         return `<article class="rounded-2xl bg-slate-900/60 border border-slate-700 p-5 space-y-3">
           <h3 class="font-serif-calm text-xl text-slate-100">${escapeText(entry.title)}</h3>
-          <p class="text-xs text-emerald-200">${escapeText(style)} · ${escapeText(voice)} · ${escapeText(entry.settings.durationMin)} min</p>
+          <p class="text-xs text-emerald-200">${escapeText(style)} · ${escapeText(voice)} · ${escapeText(entry.settings.durationMin)} min · ${escapeText(({wordy:'Wordy',average:'Average',minimal:'Minimal'})[entry.settings.wordiness] || 'Average')} guidance</p>
           <p class="text-sm text-slate-400 break-words">${escapeText(entry.settings.intention.slice(0, 240))}</p>
           <div class="flex flex-wrap gap-2">
             <button data-replay-session="${escapeText(entry.id)}" class="rounded-full bg-emerald-300 text-slate-950 px-4 py-2 text-sm">Replay Session</button>
@@ -1898,6 +1913,7 @@
       state.session.active = false;
       const setup = entry.settings;
       state.intention = setup.intention;
+      state.wordiness = ['wordy', 'average', 'minimal'].includes(setup.wordiness) ? setup.wordiness : 'average';
       state.style = MEDITATION_STYLES.some(item => item.id === setup.style) ? setup.style : 'breathwork';
       state.voiceId = VOICES.some(item => item.id === setup.voiceId) ? setup.voiceId : 'clara';
       state.durationMin = Math.max(1, Math.min(60, Number(setup.durationMin) || 10));
@@ -1913,7 +1929,7 @@
       document.getElementById('durationDisplay').textContent = `${state.durationMin} minutes`;
       document.getElementById('voiceVolumeSlider').value = state.voiceVolume;
       document.getElementById('voiceVolumeVal').textContent = `${state.voiceVolume}%`;
-      renderStyleGrid(); renderDurationPresets(); renderPauseControls(); renderVoiceGrid(); renderSoundGrid(); updateStudioSummary();
+      renderWordinessControls(); renderStyleGrid(); renderDurationPresets(); renderPauseControls(); renderVoiceGrid(); renderSoundGrid(); updateStudioSummary();
       if (replay) startSession(); else switchView('script');
       return true;
     }
@@ -2244,6 +2260,26 @@
       if (statusText) statusText.textContent = message;
     }
 
+    function setScriptWordiness(level) {
+      if (!['wordy', 'average', 'minimal'].includes(level) || state.wordiness === level) return;
+      state.wordiness = level;
+      state.customEditedChapters = null;
+      state.aiGeneratedChapters = null;
+      state.loadedSession = null;
+      state.scriptStatus = 'draft';
+      renderWordinessControls();
+      updateStudioSummary();
+      if (state.view === 'script') { renderScriptView(); ensurePersonalScript(); }
+    }
+
+    function renderWordinessControls() {
+      const options = [{ id:'wordy', label:'Wordy', hint:'Detailed guidance and fuller reflections.' }, { id:'average', label:'Average', hint:'Balanced guidance with room to practice.' }, { id:'minimal', label:'Minimal', hint:'A few brief cues, with more quiet space.' }];
+      const group = document.getElementById('wordinessGroup');
+      group.innerHTML = options.map(option => `<button type="button" data-wordiness="${option.id}" aria-pressed="${state.wordiness === option.id}" class="rounded-xl px-3 py-2 text-sm border transition ${state.wordiness === option.id ? 'bg-emerald-300/20 border-emerald-300/50 text-emerald-100' : 'bg-slate-900/60 border-slate-700 text-slate-300 hover:border-emerald-300/40'}">${option.label}</button>`).join('');
+      document.getElementById('wordinessHint').textContent = options.find(option => option.id === state.wordiness)?.hint || options[1].hint;
+      group.querySelectorAll('[data-wordiness]').forEach(button => button.addEventListener('click', () => setScriptWordiness(button.dataset.wordiness)));
+    }
+
     function renderMoodChips() {
       const wrap = document.getElementById('moodChips');
       wrap.innerHTML = MOOD_CHIPS.map((c, idx) => `
@@ -2472,7 +2508,7 @@
       const vc = VOICES.find(x => x.id === state.voiceId);
       const activeCount = state.sounds.filter(s => s.enabled).length;
       document.getElementById('studioFooterSummary').textContent =
-        `${state.durationMin} min · ${st ? st.name : ''} · ${vc ? vc.name : ''} · ${activeCount} ambient ${activeCount === 1 ? 'layer' : 'layers'}`;
+        `${state.durationMin} min · ${st ? st.name : ''} · ${vc ? vc.name : ''} · ${activeCount} ambient ${activeCount === 1 ? 'layer' : 'layers'} · ${state.wordiness[0].toUpperCase() + state.wordiness.slice(1)} guidance`;
     }
 
     function renderScriptView() {
@@ -2493,7 +2529,7 @@
 
       document.getElementById('scriptTitle').textContent = `${st ? st.name : 'Guided'} Meditation`;
       document.getElementById('scriptSubtitle').textContent =
-        `Target ${state.durationMin} min (est. ${Math.round(plan.totalEstSec / 60)} min) · ${vc ? vc.name : ''} · ${modeName} pausing`;
+        `Target ${state.durationMin} min (est. ${Math.round(plan.totalEstSec / 60)} min) · ${vc ? vc.name : ''} · ${modeName} pausing · ${state.wordiness[0].toUpperCase() + state.wordiness.slice(1)} guidance`;
 
       const banner = document.getElementById('scriptReflectionBanner');
       if (plan.info.reflectionNote) {
@@ -2609,6 +2645,7 @@
       document.getElementById('tabLibraryBtn').addEventListener('click', () => switchView('library'));
       document.getElementById('openLibraryBtn').addEventListener('click', () => switchView('library'));
       document.getElementById('saveSessionBtn').addEventListener('click', saveCompletedSession);
+      renderWordinessControls();
       renderMoodChips();
       renderStyleGrid();
       renderDurationPresets();

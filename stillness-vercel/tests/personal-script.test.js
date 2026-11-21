@@ -44,7 +44,7 @@ test('structured requests preserve the complete note and return validated chapte
   assert.equal(result.body.text, JSON.stringify(chapters));
   assert.match(url, /\/gemini-3\.5-flash-lite:generateContent$/);
   assert.equal(result.body.model, 'gemini-3.5-flash-lite');
-  assert.deepEqual(JSON.parse(outbound.contents[0].parts[0].text), request);
+  assert.deepEqual(JSON.parse(outbound.contents[0].parts[0].text), { ...request, wordiness: 'average' });
   assert.equal(outbound.generationConfig.responseMimeType, 'application/json');
   assert.deepEqual(outbound.generationConfig.responseJsonSchema, {
     type: 'array', items: { type: 'string' }, minItems: 3, maxItems: 3
@@ -55,6 +55,34 @@ test('structured requests preserve the complete note and return validated chapte
   assert.match(instructions, /false reassurance/i);
   assert.match(instructions, /Loving.kindness|chosen style/i);
   assert.equal(JSON.stringify(result.body).includes('test-only-key'), false);
+});
+
+for (const [wordiness, wordRange] of [['wordy', '700 to 850'], ['average', '350 to 500'], ['minimal', '100 to 180']]) {
+  test(`${wordiness} requests give the writer the chosen guidance level and word budget`, async t => {
+    configure(t);
+    let payload;
+    t.mock.method(globalThis, 'fetch', async (url, options) => {
+      payload = JSON.parse(options.body);
+      return provider(JSON.stringify(chapters));
+    });
+    const result = response();
+    await script({ method:'POST', body:{...request, wordiness} }, result);
+    assert.equal(result.code, 200);
+    const data = JSON.parse(payload.contents[0].parts[0].text);
+    assert.equal(data.wordiness, wordiness);
+    assert.equal(data.intention, intention);
+    assert.ok(payload.systemInstruction.parts[0].text.includes(wordRange));
+  });
+}
+
+test('unsupported guidance levels are rejected before contacting the provider', async t => {
+  configure(t);
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => { calls++; return provider(JSON.stringify(chapters)); });
+  const result = response();
+  await script({ method:'POST', body:{...request, wordiness:'unlimited'} }, result);
+  assert.equal(result.code, 400);
+  assert.equal(calls, 0);
 });
 
 for (const [label, invalid] of [
