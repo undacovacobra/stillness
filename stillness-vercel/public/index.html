@@ -140,6 +140,7 @@
         <nav class="inline-flex rounded-full bg-slate-900/80 border border-slate-700/60 p-0.5" aria-label="Primary Views">
           <button id="tabStudioBtn" type="button" class="px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-full transition bg-emerald-300/20 text-emerald-100">Studio</button>
           <button id="tabScriptBtn" type="button" class="px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-full transition text-slate-400 hover:text-slate-200">Script</button>
+          <button id="tabLibraryBtn" type="button" class="px-3 py-1.5 text-xs sm:text-sm font-medium rounded-full text-slate-400 hover:text-slate-200">Library</button>
           <button id="tabPlayerBtn" type="button" class="hidden px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-full transition text-slate-400 hover:text-slate-200">Session</button>
         </nav>
         <button id="openSettingsBtn" type="button" title="AI Script &amp; Studio Voice Settings" class="p-2 rounded-full border border-slate-700/60 bg-slate-900/70 text-slate-300 hover:text-emerald-200 hover:border-emerald-400/40 transition">
@@ -166,7 +167,7 @@
 
         <div class="space-y-3">
           <label for="intentionInput" class="block text-xs text-slate-400">Write freely about what's on your mind, how your body feels, or what you're going through. Every chapter of your meditation is custom-composed around your words while staying rooted in your chosen meditation style.</label>
-          <textarea id="intentionInput" rows="3" placeholder="e.g., I'm nervous about my presentation at work tomorrow, or my shoulders are tight after a stressful week, or I had a hard conversation with my brother..." class="w-full rounded-xl bg-slate-950/65 border border-slate-700/70 focus:border-emerald-400/60 focus:ring-1 focus:ring-emerald-400/30 px-4 py-3 text-sm text-slate-100 placeholder-slate-500 outline-none transition resize-y"></textarea>
+          <textarea id="intentionInput" rows="3" maxlength="12000" placeholder="e.g., I'm nervous about my presentation at work tomorrow, or my shoulders are tight after a stressful week, or I had a hard conversation with my brother..." class="w-full rounded-xl bg-slate-950/65 border border-slate-700/70 focus:border-emerald-400/60 focus:ring-1 focus:ring-emerald-400/30 px-4 py-3 text-sm text-slate-100 placeholder-slate-500 outline-none transition resize-y"></textarea>
           <div id="personalAnchorPreview" class="hidden rounded-xl bg-emerald-400/8 border border-emerald-300/20 px-3.5 py-2.5 text-xs text-emerald-100/90 space-y-2">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <span id="personalAnchorText" class="font-medium text-emerald-100">Tailoring every chapter around your exact words.</span>
@@ -300,9 +301,18 @@
           </div>
         </div>
 
+        <p id="scriptGenerationStatus" role="status" class="text-sm text-emerald-200"></p>
         <div id="scriptReflectionBanner" class="hidden rounded-xl bg-emerald-400/10 border border-emerald-300/20 px-4 py-3 text-xs sm:text-sm text-emerald-100/90"></div>
         <p class="text-[11px] text-slate-400">You can edit any chapter directly below—your guide will read your exact words.</p>
         <div id="scriptChaptersList" class="space-y-3 pt-1"></div>
+      </div>
+    </section>
+
+    <section id="viewLibrary" class="hidden space-y-5">
+      <div class="glass-card rounded-2xl p-5 sm:p-6 space-y-4">
+        <h2 class="font-serif-calm text-3xl text-slate-100">Your session library</h2>
+        <p class="text-sm text-slate-400">Keep the practices you want to return to. Saved scripts, voices, pauses, and sound settings stay in this browser on this device. Audio is generated again when you replay.</p>
+        <div id="sessionLibraryList" class="space-y-4"></div>
       </div>
     </section>
 
@@ -351,6 +361,17 @@
             <span id="elapsedTimeDisplay">0:00</span>
             <span id="totalTimeDisplay">10:00</span>
           </div>
+        </div>
+
+        <div id="sessionSavePanel" class="hidden w-full max-w-xl rounded-2xl bg-emerald-400/10 border border-emerald-300/25 p-4 space-y-3 text-left">
+          <h3 class="font-serif-calm text-xl text-emerald-100">Keep this practice</h3>
+          <label for="sessionSaveTitle" class="block text-xs text-slate-300">Session name</label>
+          <input id="sessionSaveTitle" maxlength="100" class="w-full rounded-xl bg-slate-950/70 border border-slate-700 px-3 py-2 text-slate-100" />
+          <div class="flex flex-wrap gap-2">
+            <button id="saveSessionBtn" type="button" class="rounded-full px-4 py-2 bg-emerald-300 text-slate-950 text-sm font-medium">Save Session</button>
+            <button id="openLibraryBtn" type="button" class="rounded-full px-4 py-2 border border-slate-600 text-slate-200 text-sm">Open Library</button>
+          </div>
+          <p id="sessionSaveStatus" role="status" class="text-xs text-slate-400">Saved on this device, with your exact script and session settings.</p>
         </div>
 
         <!-- Player Controls -->
@@ -455,7 +476,7 @@
       { id: 'clara', name: 'Clara', role: 'Warm & Gentle', badge: 'Studio Voice', audioPrefix: 'clara', previewKey: 'clara_open_presence', openaiVoice: 'nova', geminiVoice: 'Vindemiatrix', geminiStyle: 'very slow, soft, warm, gentle meditation guide with a soothing unhurried cadence and hushed calm breathiness', gender: 'female', pitch: 0.96, rate: 0.84 },
       { id: 'julian', name: 'Julian', role: 'Calm & Grounded', badge: 'Studio Voice', audioPrefix: 'julian', previewKey: 'julian_open_presence', openaiVoice: 'onyx', geminiVoice: 'Algieba', geminiStyle: 'very slow, smooth, deep, grounded meditation guide with a warm quiet reassuring tone and unhurried pauses', gender: 'male', pitch: 0.88, rate: 0.83 },
       { id: 'maya', name: 'Maya', role: 'Soft & Soothing', badge: 'Studio Voice', audioPrefix: 'clara', previewKey: 'maya_preview', openaiVoice: 'shimmer', geminiVoice: 'Achernar', geminiStyle: 'very slow, soft, airy, tender meditation guide speaking gently in a quiet soothing whisper-soft cadence', gender: 'female', pitch: 1.02, rate: 0.85 },
-      { id: 'oliver', name: 'Oliver', role: 'Warm & Steady', badge: 'Studio Voice', audioPrefix: 'julian', previewKey: 'oliver_preview', openaiVoice: 'echo', geminiVoice: 'Sulafat', geminiStyle: 'very slow, warm, steady, comforting meditation guide with gentle unhurried pacing and calm resonance', gender: 'male', pitch: 0.82, rate: 0.82 }
+      { id: 'oliver', name: 'Oliver', role: 'Warm & Steady', badge: 'Studio Voice', audioPrefix: 'julian', previewKey: 'oliver_preview', openaiVoice: 'echo', geminiVoice: 'Charon', geminiStyle: 'very slow, warm, steady, comforting meditation guide with gentle unhurried pacing and calm resonance', gender: 'male', pitch: 0.82, rate: 0.82 }
     ];
 
     // 7 loudness-balanced natural recordings (NO Ambient Drone)
@@ -557,6 +578,8 @@
       aiScriptCacheKey: '',
       aiGeneratedChapters: null,
       aiLoading: false,
+      scriptStatus: 'draft',
+      loadedSession: null,
       serverHostedKey: location.protocol === 'http:' || location.protocol === 'https:',
       serverStatus: 'checking'
     };
@@ -1305,75 +1328,87 @@
 
     function getActiveSessionPlan() {
       const plan = composePersonalChapters();
+      if (state.loadedSession?.cacheKey === currentScriptCacheKey()) {
+        plan.chapters = JSON.parse(JSON.stringify(state.loadedSession.chapters));
+        plan.totalEstSec = state.loadedSession.totalEstSec;
+      }
       if (state.customEditedChapters && state.customEditedChapters.length === plan.chapters.length) {
         plan.chapters = plan.chapters.map((ch, i) => ({ ...ch, text: state.customEditedChapters[i] }));
-      } else if (state.aiGeneratedChapters && state.aiScriptCacheKey === currentScriptCacheKey() && state.aiGeneratedChapters.length === plan.chapters.length) {
+      } else if (state.loadedSession?.cacheKey !== currentScriptCacheKey() && state.aiGeneratedChapters && state.aiScriptCacheKey === currentScriptCacheKey() && state.aiGeneratedChapters.length === plan.chapters.length) {
         plan.chapters = plan.chapters.map((ch, i) => ({ ...ch, text: state.aiGeneratedChapters[i] }));
       }
+      return state.loadedSession?.cacheKey === currentScriptCacheKey() ? plan : rebalancePlanTiming(plan);
+    }
+
+    function rebalancePlanTiming(plan) {
+      const spokenSec = plan.chapters.reduce((sum, ch) => sum + Math.ceil(ch.text.trim().split(/\s+/).length * 60 / 100), 0);
+      const budget = Math.max(plan.chapters.length * 4, state.durationMin * 60 - spokenSec - 3);
+      const weights = plan.chapters.reduce((sum, ch) => sum + (ch.pauseSec || 4), 0);
+      plan.chapters = plan.chapters.map(ch => ({ ...ch, pauseSec: Math.max(ch.cueType === 'breath3' ? 24 : 4, Math.round(budget * (ch.pauseSec || 4) / weights)) }));
+      plan.totalEstSec = spokenSec + plan.chapters.reduce((sum, ch) => sum + ch.pauseSec, 0) + 3;
       return plan;
     }
 
-    // ==================== OPTIONAL LIVE AI SCRIPT (GEMINI OR OPENAI) & STUDIO TTS ====================
-    function buildAIPrompt(plan) {
-      const st = MEDITATION_STYLES.find(x => x.id === state.style);
-      const styleName = st ? st.name : 'Breathwork';
-      return `You are a deeply attentive, warm, authentic meditation teacher. Write ${plan.chapters.length} bespoke spoken meditation chapters for a ${state.durationMin}-minute ${styleName} meditation.
-
-The person wrote this exact personal note:
-"${state.intention.trim()}"
-
-Critical requirements:
-1. Write a truly custom, deeply personal script crafted specifically for THIS person's exact situation, people, physical sensations, emotions, and hopes—never a generic fill-in-the-blank template.
-2. Address different facets of what they wrote across different chapters so the meditation unfolds naturally without repeating the same phrase over and over.
-3. Keep it an authentic ${styleName} meditation (grounded, calm, non-judgmental—NOT toxic positivity or lecturing). If they used harsh self-critical words about themselves, respond with tender self-compassion without repeating the cruel labels.
-4. Chapter 1: Opening & warm personal recognition. Chapter 2: Core ${styleName} practice tied directly to what they feel. Middle chapters: gently returning to ${styleName} when their specific thoughts/worries pull them away. Final chapter: gentle closing that carries steadiness back into their real life.
-5. Each chapter should be 2–4 calm, natural, spoken sentences (35–55 words).
-
-Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with no markdown fences or extra commentary.`;
-    }
+    // ==================== PERSONAL SCRIPT & STUDIO VOICE ====================
+    const personalScriptRequests = new Map();
 
     async function maybeEnhanceWithAI(plan, forceRefresh = false) {
-      if (!state.intention.trim()) return plan;
-      if (!state.serverHostedKey) return plan;
-
+      if (!state.intention.trim() || !state.serverHostedKey) return plan;
       const cacheKey = currentScriptCacheKey();
-      if (!forceRefresh && state.aiGeneratedChapters && state.aiScriptCacheKey === cacheKey && state.aiGeneratedChapters.length === plan.chapters.length) {
+      if (!forceRefresh && state.loadedSession?.cacheKey === cacheKey) return plan;
+      if (!forceRefresh && state.aiScriptCacheKey === cacheKey && state.aiGeneratedChapters?.length === plan.chapters.length) {
         plan.chapters = plan.chapters.map((ch, i) => ({ ...ch, text: state.aiGeneratedChapters[i] }));
         return plan;
       }
-
-      const prompt = buildAIPrompt(plan);
-      let content = '';
-
-      if (state.serverHostedKey) {
-        try {
-          const resp = await fetch('/api/script', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt })
-          });
-          if (resp.ok) {
-            const data = await resp.json();
-            content = data.text || '';
-          }
-        } catch (e) {}
+      if (!personalScriptRequests.has(cacheKey)) {
+        const body = { intention: state.intention.trim(), style: MEDITATION_STYLES.find(x => x.id === state.style)?.name || 'Breathwork', durationMin: state.durationMin, chapterCount: plan.chapters.length };
+        const pending = (async () => {
+          const response = await fetch('/api/script', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          if (!response.ok) throw new Error('Personal script unavailable');
+          const data = await response.json();
+          const chapters = data.chapters || JSON.parse(data.text);
+          if (!Array.isArray(chapters) || chapters.length !== body.chapterCount || chapters.some(text => typeof text !== 'string' || !text.trim())) throw new Error('Incomplete personal script');
+          return chapters.map(text => text.trim());
+        })();
+        personalScriptRequests.set(cacheKey, pending);
       }
-
-      if (content) {
-        try {
-          const jsonMatch = content.match(/\[[\s\S]*\]/);
-          if (jsonMatch) {
-            const arr = JSON.parse(jsonMatch[0]);
-            if (Array.isArray(arr) && arr.length === plan.chapters.length) {
-              const cleaned = arr.map((s, i) => String(s || '').trim() || plan.chapters[i].text);
-              state.aiGeneratedChapters = cleaned;
-              state.aiScriptCacheKey = cacheKey;
-              plan.chapters = plan.chapters.map((ch, i) => ({ ...ch, text: cleaned[i] }));
-            }
-          }
-        } catch (e) {}
+      try {
+        const chapters = await personalScriptRequests.get(cacheKey);
+        if (currentScriptCacheKey() !== cacheKey || state.loadedSession?.cacheKey === cacheKey) return plan;
+        state.aiGeneratedChapters = chapters;
+        state.aiScriptCacheKey = cacheKey;
+        state.scriptStatus = 'ready';
+        plan.chapters = plan.chapters.map((ch, i) => ({ ...ch, text: chapters[i] }));
+        rebalancePlanTiming(plan);
+      } catch (error) {
+        if (currentScriptCacheKey() === cacheKey) state.scriptStatus = 'error';
+      } finally {
+        personalScriptRequests.delete(cacheKey);
       }
       return plan;
+    }
+
+    let scriptPreparation = null;
+    let scriptPreparationKey = '';
+    async function ensurePersonalScript(forceRefresh = false) {
+      const key = currentScriptCacheKey();
+      if (!state.intention.trim() || state.customEditedChapters || state.loadedSession?.cacheKey === key) return;
+      if (!forceRefresh && state.aiScriptCacheKey === key && state.aiGeneratedChapters) return;
+      if (scriptPreparation && scriptPreparationKey === key) return scriptPreparation;
+      state.aiLoading = true;
+      state.scriptStatus = 'composing';
+      scriptPreparationKey = key;
+      renderScriptView();
+      const pending = maybeEnhanceWithAI(composePersonalChapters(), forceRefresh);
+      scriptPreparation = pending;
+      try { await pending; }
+      finally {
+        if (scriptPreparation === pending) {
+          scriptPreparation = null;
+          state.aiLoading = false;
+          if (state.view === 'script') renderScriptView();
+        }
+      }
     }
 
     function pcmBase64ToWavUrl(base64Pcm, sampleRate = 24000) {
@@ -1401,6 +1436,8 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
     }
 
     let lastTTSErrorDetail = '';
+    let voicePlaybackRun = 0;
+    let voiceRequestController = null;
 
     async function playInlineAudioData(inlineData, onDone) {
       const mime = (inlineData.mimeType || '').toLowerCase();
@@ -1431,10 +1468,15 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
 
     async function speakWithGeminiTTS(text, voiceObj, onDone) {
       if (!state.serverHostedKey) return false;
+      const run = voicePlaybackRun;
+      voiceRequestController?.abort();
+      const controller = new AbortController();
+      voiceRequestController = controller;
       lastTTSErrorDetail = '';
       try {
         const resp = await fetch('/api/tts', {
           method: 'POST',
+          signal: controller.signal,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             text,
@@ -1442,17 +1484,25 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
             style: voiceObj.geminiStyle || 'very slow, soft, warm, gentle meditation guide with a soothing unhurried cadence'
           })
         });
+        if (run !== voicePlaybackRun || controller.signal.aborted) return false;
         if (!resp.ok) {
           const detail = await resp.json().catch(() => ({}));
+          if (run !== voicePlaybackRun || controller.signal.aborted) return false;
           lastTTSErrorDetail = detail.error || 'Studio voice is temporarily unavailable.';
           showToast(lastTTSErrorDetail);
           return false;
         }
         const audio = await resp.json();
-        if (audio && audio.data) return await playInlineAudioData(audio, onDone);
+        if (run !== voicePlaybackRun || controller.signal.aborted) return false;
+        if (audio && audio.data) return await playInlineAudioData(audio, () => {
+          if (run === voicePlaybackRun) onDone();
+        });
         lastTTSErrorDetail = 'Studio voice returned no audio. Please try again.';
       } catch (e) {
+        if (run !== voicePlaybackRun || controller.signal.aborted) return false;
         lastTTSErrorDetail = 'Could not reach studio voice. Please try again.';
+      } finally {
+        if (voiceRequestController === controller) voiceRequestController = null;
       }
       return false;
     }
@@ -1693,13 +1743,18 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
     }
 
     function stopVoicePlayback() {
+      voicePlaybackRun += 1;
+      voiceRequestController?.abort();
+      voiceRequestController = null;
       voicePlayer.pause();
       voicePlayer.onended = null;
+      voicePlayer.onerror = null;
       cancelBrowserSpeechQueue();
       state.previewingVoiceId = null;
     }
 
     async function toggleVoicePreview(voiceId) {
+      if (state.session.active) { showToast('End your current session before previewing another voice.'); return; }
       const voiceObj = VOICES.find(v => v.id === voiceId);
       if (!voiceObj) return;
       if (state.previewingVoiceId === voiceId) {
@@ -1708,8 +1763,11 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
         return;
       }
       stopVoicePlayback();
+      const previewRun = voicePlaybackRun;
+      state.voiceId = voiceId;
       state.previewingVoiceId = voiceId;
       renderVoiceGrid();
+      updateStudioSummary();
 
       if (state.serverHostedKey) {
         const sampleText = `Take a slow, gentle breath in... and let your shoulders soften as you breathe out. I'm ${voiceObj.name}, and I'll be guiding your practice today.`;
@@ -1717,7 +1775,12 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
           state.previewingVoiceId = null;
           renderVoiceGrid();
         });
+        if (previewRun !== voicePlaybackRun) return;
         if (ok) return;
+        state.previewingVoiceId = null;
+        renderVoiceGrid();
+        showToast(`${voiceObj.name} is temporarily unavailable. Please try this voice again.`);
+        return;
       }
 
       const src = VOICE_AUDIO[voiceObj.previewKey];
@@ -1774,6 +1837,87 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
       updateMixPreviewButton();
     }
 
+    // Saved practices contain the script and settings; credentials never enter the library.
+    const SESSION_LIBRARY_KEY = 'stillness_session_library_v1';
+    function captureSessionSettings() {
+      return JSON.parse(JSON.stringify({ intention: state.intention, style: state.style, durationMin: state.durationMin, voiceId: state.voiceId, voiceVolume: state.voiceVolume, pauseMode: state.pauseMode, pausePace: state.pausePace, sounds: state.sounds, variationSeed: state.variationSeed }));
+    }
+    function readSessionLibrary() {
+      try {
+        const saved = JSON.parse(localStorage.getItem(SESSION_LIBRARY_KEY) || '[]');
+        return Array.isArray(saved) ? saved.filter(item => item && typeof item.id === 'string' && typeof item.title === 'string' && item.settings && typeof item.settings.intention === 'string' && Array.isArray(item.chapters) && item.chapters.length && item.chapters.every(ch => ch && typeof ch.text === 'string' && ch.text.trim())) : [];
+      } catch (error) { return []; }
+    }
+    function saveCompletedSession() {
+      if (state.session.phase !== 'done' || !state.session.chapters.length) return false;
+      if (state.session.savedId) { showToast('This session is already in your library.'); return true; }
+      const settings = state.session.settings || captureSessionSettings();
+      const entry = { id: Date.now().toString(36) + Math.random().toString(36).slice(2), title: document.getElementById('sessionSaveTitle').value.trim().slice(0, 100) || settings.intention.slice(0, 70) || 'A moment of stillness', createdAt: new Date().toISOString(), settings, chapters: JSON.parse(JSON.stringify(state.session.chapters)), totalEstSec: state.session.totalEstSec };
+      try {
+        const library = readSessionLibrary();
+        localStorage.setItem(SESSION_LIBRARY_KEY, JSON.stringify([entry, ...library]));
+        state.session.savedId = entry.id;
+        document.getElementById('saveSessionBtn').disabled = true;
+        document.getElementById('saveSessionBtn').textContent = 'Saved to Library';
+        document.getElementById('sessionSaveStatus').textContent = 'Saved on this device. Find it in your Library anytime.';
+        showToast('Session saved to your library.');
+        return true;
+      } catch (error) {
+        document.getElementById('sessionSaveStatus').textContent = 'This browser could not save the session. Free some storage or enable browser storage, then try again.';
+        return false;
+      }
+    }
+    function escapeText(value) { return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char])); }
+    function renderSessionLibrary() {
+      const entries = readSessionLibrary();
+      const list = document.getElementById('sessionLibraryList');
+      list.innerHTML = entries.length ? entries.map(entry => {
+        const voice = VOICES.find(v => v.id === entry.settings.voiceId)?.name || 'Studio Voice';
+        const style = MEDITATION_STYLES.find(v => v.id === entry.settings.style)?.name || 'Meditation';
+        return `<article class="rounded-2xl bg-slate-900/60 border border-slate-700 p-5 space-y-3">
+          <h3 class="font-serif-calm text-xl text-slate-100">${escapeText(entry.title)}</h3>
+          <p class="text-xs text-emerald-200">${escapeText(style)} · ${escapeText(voice)} · ${escapeText(entry.settings.durationMin)} min</p>
+          <p class="text-sm text-slate-400 break-words">${escapeText(entry.settings.intention.slice(0, 240))}</p>
+          <div class="flex flex-wrap gap-2">
+            <button data-replay-session="${escapeText(entry.id)}" class="rounded-full bg-emerald-300 text-slate-950 px-4 py-2 text-sm">Replay Session</button>
+            <button data-review-session="${escapeText(entry.id)}" class="rounded-full border border-slate-600 px-4 py-2 text-sm text-slate-200">Read Script</button>
+            <button data-delete-session="${escapeText(entry.id)}" class="rounded-full px-4 py-2 text-sm text-slate-400 hover:text-rose-200">Delete</button>
+          </div></article>`;
+      }).join('') : '<p class="rounded-xl border border-slate-700 p-6 text-slate-400">Your library is empty. Finish a session and choose Save Session to keep it here.</p>';
+      list.querySelectorAll('[data-replay-session]').forEach(btn => btn.addEventListener('click', () => restoreSavedSession(btn.dataset.replaySession, true)));
+      list.querySelectorAll('[data-review-session]').forEach(btn => btn.addEventListener('click', () => restoreSavedSession(btn.dataset.reviewSession, false)));
+      list.querySelectorAll('[data-delete-session]').forEach(btn => btn.addEventListener('click', () => {
+        try { localStorage.setItem(SESSION_LIBRARY_KEY, JSON.stringify(readSessionLibrary().filter(entry => entry.id !== btn.dataset.deleteSession))); renderSessionLibrary(); }
+        catch (error) { showToast('Could not update your library. Please try again.'); }
+      }));
+    }
+    function restoreSavedSession(id, replay = false) {
+      const entry = readSessionLibrary().find(item => item.id === id);
+      if (!entry) return false;
+      clearSessionTimers(); stopVoicePlayback(); stopAllSounds(200);
+      state.session.active = false;
+      const setup = entry.settings;
+      state.intention = setup.intention;
+      state.style = MEDITATION_STYLES.some(item => item.id === setup.style) ? setup.style : 'breathwork';
+      state.voiceId = VOICES.some(item => item.id === setup.voiceId) ? setup.voiceId : 'clara';
+      state.durationMin = Math.max(1, Math.min(60, Number(setup.durationMin) || 10));
+      state.voiceVolume = Math.max(10, Math.min(100, Number(setup.voiceVolume) || 90));
+      state.pauseMode = ['natural','every','minimal'].includes(setup.pauseMode) ? setup.pauseMode : 'natural';
+      state.pausePace = Number(setup.pausePace) || 1;
+      state.variationSeed = Number(setup.variationSeed) || 0;
+      state.sounds = SOUNDS.map(sound => { const saved = Array.isArray(setup.sounds) ? setup.sounds.find(item => item.id === sound.id) : null; return { ...sound, enabled: saved ? Boolean(saved.enabled) : sound.enabled, volume: saved ? Math.max(0, Math.min(100, Number(saved.volume) || 0)) : sound.volume }; });
+      state.customEditedChapters = null; state.aiGeneratedChapters = null;
+      state.loadedSession = { ...entry, cacheKey: currentScriptCacheKey() };
+      document.getElementById('intentionInput').value = state.intention;
+      document.getElementById('durationSlider').value = state.durationMin;
+      document.getElementById('durationDisplay').textContent = `${state.durationMin} minutes`;
+      document.getElementById('voiceVolumeSlider').value = state.voiceVolume;
+      document.getElementById('voiceVolumeVal').textContent = `${state.voiceVolume}%`;
+      renderStyleGrid(); renderDurationPresets(); renderPauseControls(); renderVoiceGrid(); renderSoundGrid(); updateStudioSummary();
+      if (replay) startSession(); else switchView('script');
+      return true;
+    }
+
     // ==================== SESSION ENGINE ====================
     function clearSessionTimers() {
       if (sessionTicker) { clearInterval(sessionTicker); sessionTicker = null; }
@@ -1787,6 +1931,7 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
       clearSessionTimers();
 
       let plan = getActiveSessionPlan();
+      document.getElementById('sessionSavePanel').classList.add('hidden');
 
       // Prime speechSynthesis immediately inside user click gesture so browsers allow speech after fade-in
       try {
@@ -1816,6 +1961,7 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
       state.session = {
         active: true,
         paused: false,
+        settings: captureSessionSettings(),
         chapters: plan.chapters,
         chapterIndex: 0,
         phase: 'fadein',
@@ -1832,14 +1978,15 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
       updateProgressUI();
 
       const hasAIKey = Boolean(state.serverHostedKey);
-      setOrbState('listen', 'Settling In', formatTime(0), hasAIKey ? 'Composing your personal script...' : 'Gentle 2.8s fade-in');
+      setOrbState('listen', 'Settling In', formatTime(0), state.loadedSession?.cacheKey === currentScriptCacheKey() ? 'Loading your saved practice...' : hasAIKey ? 'Preparing your personal script...' : 'Gentle 2.8s fade-in');
       document.getElementById('playerChapterTitle').textContent = 'Preparing Your Personal Space';
       document.getElementById('playerScriptText').textContent = 'Let the natural soundscape gently fade in as your personalized practice begins...';
       document.getElementById('pauseActionRow').classList.add('hidden');
 
       if (hasAIKey && !state.customEditedChapters) {
+        const session = state.session;
         plan = await maybeEnhanceWithAI(plan);
-        if (!state.session.active) return;
+        if (!session.active || state.session !== session) return;
         state.session.chapters = plan.chapters;
       }
 
@@ -1887,8 +2034,13 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
       // Exact Custom Script ONLY (never plays mismatched pre-recorded tracks):
       // Hosted Studio Voice -> Natural Browser Speech -> Calm On-Screen Pacing
       if (state.serverHostedKey) {
+        const run = voicePlaybackRun;
         const okGemini = await speakWithGeminiTTS(ch.text, voiceObj, onSpokenDone);
+        if (!state.session.active || run !== voicePlaybackRun) return;
         if (okGemini) return;
+        showToast(`${voiceObj.name} is temporarily unavailable. You can follow your script on screen.`);
+        handleNoLocalVoice();
+        return;
       }
       const okBrowser = speakWithBrowserNaturalVoice(ch.text, voiceObj, onSpokenDone, handleNoLocalVoice);
       if (okBrowser) return;
@@ -1959,6 +2111,7 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
     }
 
     function finishSession() {
+      state.session.settings = { ...(state.session.settings || captureSessionSettings()), voiceId: state.voiceId, voiceVolume: state.voiceVolume, pausePace: state.pausePace, sounds: JSON.parse(JSON.stringify(state.sounds)) };
       clearSessionTimers();
       stopVoicePlayback();
       state.session.phase = 'done';
@@ -1969,6 +2122,11 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
       document.getElementById('playerChapterTitle').textContent = 'Session Complete';
       document.getElementById('playerScriptText').textContent = 'Your practice is complete. Feel free to linger with the soundscape or return to the studio whenever you are ready.';
       document.getElementById('playPauseBtn').textContent = 'Start Again';
+      document.getElementById('sessionSavePanel').classList.remove('hidden');
+      document.getElementById('sessionSaveTitle').value = (state.session.settings?.intention || '').slice(0, 70) || 'A moment of stillness';
+      document.getElementById('saveSessionBtn').disabled = false;
+      document.getElementById('saveSessionBtn').textContent = 'Save Session';
+      document.getElementById('sessionSaveStatus').textContent = 'Save your exact script, selected voice, and sound settings on this device.';
       stopAllSounds(4000);
     }
 
@@ -2019,6 +2177,7 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
     }
 
     function endSession() {
+      if (state.session.active) { finishSession(); return; }
       clearSessionTimers();
       stopVoicePlayback();
       stopAllSounds(600);
@@ -2050,6 +2209,7 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
       document.getElementById('viewStudio').classList.toggle('hidden', viewName !== 'studio');
       document.getElementById('viewScript').classList.toggle('hidden', viewName !== 'script');
       document.getElementById('viewPlayer').classList.toggle('hidden', viewName !== 'player');
+      document.getElementById('viewLibrary').classList.toggle('hidden', viewName !== 'library');
 
       const tabPlayerBtn = document.getElementById('tabPlayerBtn');
       if (state.session.active || viewName === 'player') {
@@ -2058,12 +2218,13 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
 
       const activeClass = 'bg-emerald-300/20 text-emerald-100';
       const inactiveClass = 'text-slate-400 hover:text-slate-200';
-      [['tabStudioBtn', 'studio'], ['tabScriptBtn', 'script'], ['tabPlayerBtn', 'player']].forEach(([id, v]) => {
+      [['tabStudioBtn', 'studio'], ['tabScriptBtn', 'script'], ['tabPlayerBtn', 'player'], ['tabLibraryBtn', 'library']].forEach(([id, v]) => {
         const btn = document.getElementById(id);
         btn.className = `px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-full transition ${viewName === v ? activeClass : inactiveClass}`;
       });
 
-      if (viewName === 'script') renderScriptView();
+      if (viewName === 'library') renderSessionLibrary();
+      if (viewName === 'script') { renderScriptView(); ensurePersonalScript(); }
     }
 
     function renderVoiceModeSwitcher() {
@@ -2077,8 +2238,8 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
         ? 'Studio voices are connected and ready. Choose a voice and begin your meditation.'
         : state.serverStatus === 'checking'
           ? 'Studio voices connect automatically. No setup is needed.'
-          : 'Studio voice is temporarily unavailable. Please try again shortly. Browser speech is available as a backup.';
-      if (badge) badge.textContent = ready ? 'Studio Voice Ready' : state.serverStatus === 'checking' ? 'Connecting Studio Voice' : 'Browser Voice Backup';
+          : 'Studio voice is temporarily unavailable. Please try again shortly. You can still follow your script on screen.';
+      if (badge) badge.textContent = ready ? 'Studio Voice Ready' : state.serverStatus === 'checking' ? 'Connecting Studio Voice' : 'Studio Voice Unavailable';
       if (hint) hint.textContent = message;
       if (statusText) statusText.textContent = message;
     }
@@ -2189,12 +2350,12 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
         const playing = state.previewingVoiceId === v.id;
         return `
           <div class="rounded-xl p-4 border transition flex flex-col justify-between gap-3 ${selected ? 'bg-emerald-400/15 border-emerald-300/50' : 'bg-slate-900/55 border-slate-700/60 hover:border-slate-500/70'}">
-            <button type="button" data-select-voice="${v.id}" class="text-left space-y-1">
+            <button type="button" data-select-voice="${v.id}" aria-pressed="${selected}" class="text-left space-y-1">
               <div class="flex items-center justify-between gap-2">
                 <span class="font-medium text-sm ${selected ? 'text-emerald-100' : 'text-slate-100'}">${v.name}</span>
                 <span class="text-[10px] px-2 py-0.5 rounded-full ${v.badge === 'Full Studio' ? 'bg-emerald-400/20 text-emerald-200' : 'bg-slate-800 text-slate-400'}">${v.badge}</span>
               </div>
-              <p class="text-xs text-slate-400">${v.role}</p>
+              <p class="text-xs text-slate-400">${v.role}${selected ? ' · Selected' : ''}</p>
             </button>
             <button type="button" data-preview-voice="${v.id}" class="w-full py-1.5 px-3 rounded-lg text-xs font-medium border transition flex items-center justify-center gap-1.5 ${playing ? 'bg-emerald-300 text-slate-950 border-emerald-300' : 'bg-slate-950/60 border-slate-700/80 text-slate-200 hover:border-emerald-300/50'}">
               <span>${playing ? '■ Stop Preview' : '▶ Preview Voice'}</span>
@@ -2205,6 +2366,7 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
 
       grid.querySelectorAll('[data-select-voice]').forEach(btn => {
         btn.addEventListener('click', () => {
+          if (!state.session.active) stopVoicePlayback();
           state.voiceId = btn.dataset.selectVoice;
           renderVoiceGrid();
           updateStudioSummary();
@@ -2315,6 +2477,9 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
 
     function renderScriptView() {
       const plan = getActiveSessionPlan();
+      const saved = state.loadedSession?.cacheKey === currentScriptCacheKey();
+      const customized = state.aiScriptCacheKey === currentScriptCacheKey() && state.aiGeneratedChapters;
+      document.getElementById('scriptGenerationStatus').textContent = saved ? 'Your saved script, exactly as you kept it.' : state.customEditedChapters ? 'Your edited script — read word for word.' : state.aiLoading ? 'Writing your meditation around the people, moments, and feelings you shared…' : customized ? 'Written specifically from your full personal note.' : state.intention.trim() ? 'Template draft: your personal script could not be completed. Choose Deep AI Compose to try again.' : 'Add a personal note in the Studio to create a meditation just for you.';
       const aiBtn = document.getElementById('aiRewriteScriptBtn');
       const hasAIKey = Boolean(state.serverHostedKey);
       if (aiBtn) {
@@ -2339,6 +2504,8 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
       }
 
       const list = document.getElementById('scriptChaptersList');
+      list.classList.toggle('hidden', state.aiLoading && !customized && !saved);
+      if (state.aiLoading && !customized && !saved) banner.classList.add('hidden');
       list.innerHTML = plan.chapters.map((ch, i) => `
         <div class="rounded-xl bg-slate-900/60 border border-slate-700/60 p-4 space-y-2">
           <div class="flex flex-wrap items-center justify-between gap-2">
@@ -2439,6 +2606,9 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
 
     function init() {
       detectServerBackend();
+      document.getElementById('tabLibraryBtn').addEventListener('click', () => switchView('library'));
+      document.getElementById('openLibraryBtn').addEventListener('click', () => switchView('library'));
+      document.getElementById('saveSessionBtn').addEventListener('click', saveCompletedSession);
       renderMoodChips();
       renderStyleGrid();
       renderDurationPresets();
@@ -2500,19 +2670,14 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
         state.customEditedChapters = null;
         state.aiGeneratedChapters = null;
         renderScriptView();
-        showToast('Generated a fresh personal script variation.');
+        ensurePersonalScript(true);
+        showToast('Writing a fresh personal script variation.');
       });
 
       document.getElementById('aiRewriteScriptBtn').addEventListener('click', async () => {
-        if (state.aiLoading) return;
-        state.aiLoading = true;
         state.customEditedChapters = null;
-        renderScriptView();
-        const basePlan = composePersonalChapters();
-        await maybeEnhanceWithAI(basePlan, true);
-        state.aiLoading = false;
-        renderScriptView();
-        showToast(state.aiGeneratedChapters ? 'Composed a bespoke AI meditation from your words.' : 'Could not reach AI right now—showing your local personal script.');
+        state.loadedSession = null;
+        await ensurePersonalScript(true);
       });
 
       document.getElementById('endSessionBtn').addEventListener('click', endSession);
@@ -2540,6 +2705,8 @@ Return ONLY a valid JSON array of exactly ${plan.chapters.length} strings, with 
         document.getElementById('settingsModal').classList.add('hidden');
       });
       document.getElementById('testStudioVoiceBtn').addEventListener('click', async () => {
+        if (state.session.active) { showToast('End your current session before testing a voice.'); return; }
+        stopVoicePlayback();
         const btn = document.getElementById('testStudioVoiceBtn');
         btn.disabled = true;
         btn.textContent = 'Testing…';

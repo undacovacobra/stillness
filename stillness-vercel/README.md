@@ -15,3 +15,11 @@ The app always calls its own `/api/script` and `/api/tts` endpoints. Visitors ne
 `/api/status` reports only whether configuration is present, not whether Google has accepted the key or whether quota is available. After changing environment variables, redeploy so the functions receive them.
 
 Run the regression tests with `npm test` (Node.js 22 or later).
+
+## Personal scripts and session library
+
+Review Script automatically composes from the full personal note. The server keeps writing instructions separate from the note and validates the requested chapter count. If generation fails, the script view labels its local template as a draft and offers a retry.
+
+After finishing or ending a session, choose **Save Session**. **Library** lets you read, replay, or delete saved practices. The exact script and the final voice, pause, and sound settings are stored in this browser on this device. Audio is generated again on replay; saved practices are not audio recordings and do not sync across devices. Clearing browser storage removes the library.
+
+Previewing a voice also selects it for the session. Switching previews cancels older requests, and studio failures are shown rather than silently substituting the same browser voice.
