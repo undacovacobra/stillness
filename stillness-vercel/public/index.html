@@ -360,6 +360,12 @@
           <p id="playerScriptText" class="font-serif-calm text-xl sm:text-2xl leading-relaxed text-slate-100">Take a quiet moment as the soundscape gently fades in...</p>
         </div>
 
+        <div id="narrationChoices" class="hidden w-full max-w-xl rounded-2xl border border-slate-700/70 bg-slate-900/60 p-4 space-y-3">
+          <button id="startDeviceVoiceBtn" type="button" class="hidden w-full rounded-full bg-emerald-300 px-4 py-3 text-sm font-semibold text-slate-950 hover:bg-emerald-200">Start With a Device Voice</button>
+          <button id="startSoundscapeBtn" type="button" class="w-full rounded-full border border-slate-500 px-4 py-3 text-sm font-medium text-slate-100 hover:border-emerald-300/50">Start Without Narration</button>
+          <p class="text-xs text-slate-400">Follow the script on screen with your selected background sounds.</p>
+        </div>
+
         <!-- Mindful Pause Continue Button -->
         <div id="pauseActionRow" class="hidden">
           <button id="continueEarlyBtn" type="button" class="px-5 py-2 rounded-full text-xs sm:text-sm font-medium bg-emerald-300/20 hover:bg-emerald-300/30 border border-emerald-300/40 text-emerald-100 transition">Continue →</button>
@@ -1573,7 +1579,11 @@
     async function resumeSessionAudio() {
       const run = voicePlaybackRun;
       if (Date.now() < voiceRetryAt && pendingVoiceAction && !state.session.narrationReady) {
-        showAudioRecovery(voiceRetryMessage());
+        if (state.session.studioNarration && state.session.phase === 'audio-error') {
+          document.getElementById('playerScriptText').textContent = voiceRetryMessage();
+        } else {
+          showAudioRecovery(voiceRetryMessage());
+        }
         return;
       }
       const jobs = [];
@@ -1739,9 +1749,10 @@
       return false;
     }
 
-    function pickBestNaturalBrowserVoice(voiceObj) {
+    function pickBestNaturalBrowserVoice(voiceObj, localOnly = false) {
       refreshBrowserVoices();
-      const enVoices = cachedBrowserVoices.filter(v => (v.lang || '').toLowerCase().startsWith('en'));
+      const enVoices = cachedBrowserVoices.filter(v =>
+        (v.lang || '').toLowerCase().startsWith('en') && (!localOnly || v.localService));
       if (!enVoices.length) return null;
 
       const wantFemale = voiceObj.gender === 'female';
@@ -1784,7 +1795,10 @@
 
     function startReadingPaceFallback(text, onDone, showNotice) {
       const readMs = Math.max(7000, Math.min(22000, (text || '').split(/\s+/).length * 440));
-      setOrbState('listen', 'Reading Pace', formatTime(state.session.elapsedSec), 'Voice unavailable · Following the script on screen');
+      const guidance = state.session.narrationMode === 'soundscape'
+        ? 'Follow the script on screen at your own pace'
+        : 'Voice unavailable · Following the script on screen';
+      setOrbState('listen', 'Reading Pace', formatTime(state.session.elapsedSec), guidance);
       if (showNotice) {
         showToast('Continuing with gentle on-screen pacing.');
       }
@@ -1798,8 +1812,8 @@
       }, readMs);
     }
 
-    function speakWithBrowserNaturalVoice(text, voiceObj, onDone, onBlocked) {
-      if (!window.speechSynthesis || browserSpeechBlockedDetected) return false;
+    function speakWithBrowserNaturalVoice(text, voiceObj, onDone, onBlocked, fixedVoice) {
+      if (!window.speechSynthesis || (!fixedVoice && browserSpeechBlockedDetected)) return false;
       try {
         cancelBrowserSpeechQueue();
         const myToken = speechRunToken;
@@ -1813,7 +1827,7 @@
           return true;
         }
 
-        const picked = pickBestNaturalBrowserVoice(voiceObj);
+        const picked = fixedVoice || pickBestNaturalBrowserVoice(voiceObj);
         let idx = 0;
         let anyChunkStarted = false;
 
@@ -1834,6 +1848,10 @@
 
         function speakNextChunk() {
           if (myToken !== speechRunToken || !state.session.active) return;
+          if (state.session.paused) {
+            speechChunkTimer = setTimeout(speakNextChunk, 250);
+            return;
+          }
           if (idx >= sentences.length) {
             clearWatchdog();
             activeUtterance = null;
@@ -1858,17 +1876,38 @@
             speechChunkTimer = setTimeout(speakNextChunk, idx < sentences.length ? 550 : 100);
           };
 
+          const watchSpeech = (delay, onTimeout) => {
+            speechWatchdogTimer = setTimeout(() => {
+              if (myToken !== speechRunToken || finished) return;
+              if (state.session.paused) watchSpeech(delay, onTimeout);
+              else onTimeout();
+            }, delay);
+          };
+
           u.onstart = () => {
+            if (myToken !== speechRunToken || finished) return;
             started = true;
             anyChunkStarted = true;
+            if (fixedVoice) {
+              state.session.phase = 'speaking';
+              setOrbState('listen', 'Listening', formatTime(state.session.elapsedSec), 'Device voice');
+            }
             clearWatchdog();
             const maxMs = Math.max(9000, sentence.split(/\s+/).length * 1050);
-            speechWatchdogTimer = setTimeout(finishChunk, maxMs);
+            watchSpeech(maxMs, fixedVoice ? () => {
+              finished = true;
+              handleSpeechBlocked();
+            } : finishChunk);
           };
 
           u.onend = finishChunk;
           u.onerror = (ev) => {
             if (finished || myToken !== speechRunToken) return;
+            if (fixedVoice) {
+              finished = true;
+              handleSpeechBlocked();
+              return;
+            }
             const errType = ev && ev.error ? ev.error : '';
             if (errType === 'interrupted' || errType === 'canceled') return;
             if (!anyChunkStarted) {
@@ -1883,15 +1922,18 @@
           clearWatchdog();
           // If speechSynthesis silently drops the utterance in a restricted WebView, fall back after 2.4s
           if (!anyChunkStarted) {
-            speechWatchdogTimer = setTimeout(() => {
-              if (!started && !finished && myToken === speechRunToken && !state.session.paused) {
+            watchSpeech(2400, () => {
+              if (!started) {
                 finished = true;
                 handleSpeechBlocked();
               }
-            }, 2400);
+            });
           } else {
             const maxMs = Math.max(9000, sentence.split(/\s+/).length * 1050);
-            speechWatchdogTimer = setTimeout(finishChunk, maxMs);
+            watchSpeech(fixedVoice ? 2400 : maxMs, fixedVoice ? () => {
+              finished = true;
+              handleSpeechBlocked();
+            } : finishChunk);
           }
           window.speechSynthesis.speak(u);
         }
@@ -2175,6 +2217,7 @@
       clearSessionTimers();
 
       let plan = getActiveSessionPlan();
+      document.getElementById('narrationChoices').classList.add('hidden');
       document.getElementById('sessionSavePanel').classList.add('hidden');
 
       // Prime speechSynthesis immediately inside user click gesture so browsers allow speech after fade-in
@@ -2305,6 +2348,7 @@
       const controller = new AbortController();
       voiceRequestController = controller;
       session.phase = 'preparing-voice';
+      document.getElementById('narrationChoices').classList.add('hidden');
       document.getElementById('audioRecoveryNotice').classList.add('hidden');
       document.getElementById('playPauseBtn').textContent = session.paused ? 'Resume' : 'Pause';
 
@@ -2330,11 +2374,15 @@
             if (!session.active || run !== voicePlaybackRun || session !== state.session) return;
             session.phase = 'audio-error';
             pendingVoiceAction = () => prepareSessionNarration(session);
-            setOrbState('listen', 'Voice Unavailable', '0:00', 'Your meditation is ready to retry');
-            document.getElementById('playPauseBtn').textContent = 'Resume Audio';
-            showAudioRecovery(Date.now() < voiceRetryAt
+            setOrbState('listen', 'Voice Unavailable', '0:00', 'Choose how to begin below');
+            document.getElementById('playPauseBtn').textContent = 'Retry Studio Voice';
+            const message = Date.now() < voiceRetryAt
               ? voiceRetryMessage()
-              : 'Studio narration could not be prepared. Tap Resume Audio to retry with the same voice.');
+              : 'Studio narration could not be prepared. Retry your selected voice or start with an option below.';
+            document.getElementById('playerChapterTitle').textContent = 'Studio Voice Unavailable';
+            document.getElementById('playerScriptText').textContent = message;
+            document.getElementById('audioRecoveryMessage').textContent = message;
+            showNarrationChoices(true);
             return;
           }
         }
@@ -2344,6 +2392,48 @@
       } finally {
         if (voiceRequestController === controller) voiceRequestController = null;
       }
+    }
+
+    function showNarrationChoices(allowDevice) {
+      const canSpeak = allowDevice && Boolean(window.speechSynthesis);
+      document.getElementById('startDeviceVoiceBtn').classList.toggle('hidden', !canSpeak);
+      document.getElementById('narrationChoices').classList.remove('hidden');
+      document.getElementById('startSoundscapeBtn').textContent = state.session.narrationMode === 'device'
+        ? 'Continue Without Narration'
+        : 'Start Without Narration';
+    }
+
+    function beginStudioAlternative(mode) {
+      const session = state.session;
+      const beforeStudio = session.studioNarration && !session.narrationReady;
+      const afterDeviceFailure = mode === 'soundscape' && session.narrationMode === 'device';
+      if (!session.active || session.phase !== 'audio-error' || (!beforeStudio && !afterDeviceFailure)) return;
+      if (mode !== 'device' && mode !== 'soundscape') return;
+
+      if (mode === 'device') {
+        const voice = VOICES.find(item => item.id === session.settings.voiceId) || VOICES[0];
+        const deviceVoice = pickBestNaturalBrowserVoice(voice, true);
+        if (!deviceVoice) {
+          document.getElementById('playerScriptText').textContent = 'This browser has no English device voice available. You can still start without narration.';
+          showNarrationChoices(false);
+          return;
+        }
+        session.deviceVoice = deviceVoice;
+      }
+
+      stopVoicePlayback();
+      session.studioNarration = false;
+      session.narrationMode = mode;
+      session.narrationClips = null;
+      session.narrationPlan = null;
+      session.paused = false;
+      document.getElementById('narrationChoices').classList.add('hidden');
+      document.getElementById('playPauseBtn').textContent = 'Pause';
+      document.getElementById('skipChapterBtn').disabled = false;
+      for (const sound of state.sounds.filter(item => item.enabled)) {
+        soundElements[sound.id]?.play().catch(() => {});
+      }
+      return playCurrentChapter();
     }
 
     async function playPreparedChapter(session, onDone) {
@@ -2418,6 +2508,22 @@
         return;
       }
 
+      if (state.session.narrationMode === 'soundscape') {
+        startReadingPaceFallback(ch.text, onSpokenDone, false);
+        return;
+      }
+      if (state.session.narrationMode === 'device') {
+        state.session.phase = 'loading-voice';
+        setOrbState('listen', 'Starting Voice', formatTime(state.session.elapsedSec), 'Device voice');
+        const deviceFailure = () => {
+          state.session.phase = 'audio-error';
+          setOrbState('listen', 'Device Voice Paused', formatTime(state.session.elapsedSec), 'Retry your voice or continue with the script');
+          document.getElementById('playPauseBtn').textContent = 'Retry Device Voice';
+          showNarrationChoices(false);
+        };
+        if (!speakWithBrowserNaturalVoice(ch.text, voiceObj, onSpokenDone, deviceFailure, state.session.deviceVoice)) deviceFailure();
+        return;
+      }
       const okBrowser = speakWithBrowserNaturalVoice(ch.text, voiceObj, onSpokenDone, handleNoLocalVoice);
       if (okBrowser) return;
       handleNoLocalVoice();
@@ -2500,6 +2606,7 @@
       state.session.narrationClips = null;
       state.session.narrationPlan = null;
       state.session.narrationReady = false;
+      document.getElementById('narrationChoices').classList.add('hidden');
       document.getElementById('pauseActionRow').classList.add('hidden');
       document.getElementById('sessionProgressBar').style.width = '100%';
       setOrbState('listen', 'Complete', formatTime(state.session.elapsedSec), 'Take your time returning');
@@ -2521,6 +2628,12 @@
       }
       if (!state.session.active) return;
       if (!state.session.paused && ['audio-blocked', 'audio-error'].includes(state.session.phase)) {
+        if (state.session.narrationMode === 'device') {
+          document.getElementById('narrationChoices').classList.add('hidden');
+          document.getElementById('playPauseBtn').textContent = 'Pause';
+          playCurrentChapter();
+          return;
+        }
         resumeSessionAudio();
         return;
       }
@@ -2548,6 +2661,8 @@
           if (!state.session.studioNarration || state.session.narrationReady) scheduleSessionStart(state.session);
         } else if (voiceNeedsGesture || state.session.phase === 'audio-blocked' || state.session.phase === 'audio-error') {
           resumeSessionAudio();
+        } else if (state.session.phase === 'loading-voice' && state.session.narrationMode === 'device' && activeUtterance) {
+          window.speechSynthesis?.resume();
         } else if (['speaking', 'buffering-voice'].includes(state.session.phase)) {
           if (readingPaceCallback && readingPaceRemainingMs > 0) {
             const cb = readingPaceCallback;
@@ -3028,6 +3143,8 @@
       document.getElementById('openLibraryBtn').addEventListener('click', () => switchView('library'));
       document.getElementById('saveSessionBtn').addEventListener('click', saveCompletedSession);
       document.getElementById('resumeAudioBtn').addEventListener('click', resumeSessionAudio);
+      document.getElementById('startDeviceVoiceBtn').addEventListener('click', () => beginStudioAlternative('device'));
+      document.getElementById('startSoundscapeBtn').addEventListener('click', () => beginStudioAlternative('soundscape'));
       renderWordinessControls();
       renderMoodChips();
       renderStyleGrid();

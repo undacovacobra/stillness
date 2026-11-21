@@ -225,6 +225,41 @@ for (const path of ['../index.html', '../public/index.html']) {
     assert.ok(requests.every(request => request.voiceName === 'Vindemiatrix'));
   });
 
+  test(`${path}: a quota error offers soundscape playback that starts without another studio request`, async () => {
+    let requests = 0;
+    const p = page(path, async () => {
+      requests += 1;
+      return new Response(JSON.stringify({retryAfterSeconds:120}), {status:429});
+    });
+    p.run(`state.session.active = true; state.session.studioNarration = true;
+      state.session.settings = captureSessionSettings();
+      state.session.chapters = [{text:'Read this exact line.', title:'Opening'}];`);
+    await p.run('prepareSessionNarration(state.session)');
+    assert.match(p.elements.get('playerScriptText').textContent, /try again after/i);
+    p.run('beginStudioAlternative("soundscape")');
+    assert.equal(p.run('state.session.phase'), 'speaking');
+    assert.equal(p.run('state.session.narrationMode'), 'soundscape');
+    assert.equal(p.elements.get('playerScriptText').textContent, 'Read this exact line.');
+    assert.equal(requests, 1);
+  });
+
+  test(`${path}: choosing device narration keeps the same local voice across chapters`, async () => {
+    const p = page(path, async () => { throw new Error('No studio request after choosing device narration'); });
+    p.run(`var firstVoice = {name:'First', lang:'en-US', localService:true};
+      var nextVoice = {name:'Next', lang:'en-US', localService:true};
+      var available = [firstVoice]; var spoken = [];
+      window.speechSynthesis = {getVoices: () => available, cancel() {}, speak(u) { spoken.push(u.voice); u.onstart(); }};
+      var SpeechSynthesisUtterance = function(text) { this.text = text; };
+      state.session.active = true; state.session.studioNarration = true; state.session.phase = 'audio-error';
+      state.session.settings = captureSessionSettings(); state.session.chapters = [
+        {text:'First line.', title:'Opening'}, {text:'Second line.', title:'Closing'}];
+      beginStudioAlternative("device");
+      available = [nextVoice]; advanceToNextChapter();`);
+    assert.equal(p.run('spoken.length'), 2);
+    assert.equal(p.run('spoken.every(voice => voice === firstVoice)'), true);
+    assert.equal(p.run('state.session.narrationMode'), 'device');
+  });
+
   test(`${path}: delayed silent priming cannot pause narration that has already started`, async () => {
     const p = page(path, async () => {});
     p.run(`var resolvePrime; var pauses = 0; var calls = 0;
