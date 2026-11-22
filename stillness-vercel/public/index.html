@@ -202,8 +202,7 @@
         <h1 id="playerStyleBadge" tabindex="-1">Meditation</h1>
         <p id="playerStatus" class="notice" role="status"></p>
         <div id="orbContainer" class="breath" aria-label="Breathing guide">
-          <canvas id="breathLine" aria-hidden="true"></canvas>
-          <p id="orbPhaseLabel"></p>
+          <div id="breathingCircle" aria-hidden="true"></div>
         </div>
         <p id="playerScriptText" class="notice transcript hidden"></p>
         <div id="membershipPlayerOptions" class="member-voice-options" hidden>
@@ -225,7 +224,6 @@
           <button id="playPauseBtn" class="main-button" type="button">Pause</button>
           <button id="toggleLiveMixerBtn" class="text-action" type="button" aria-haspopup="dialog">Sound mix</button>
         </div>
-        <button id="toggleBreathBtn" class="text-action breath-toggle" type="button" aria-pressed="true">Hide breathing guide</button>
         <div id="pauseActionRow" class="hidden"><button id="continueEarlyBtn" class="text-action subtle" type="button">Continue now</button></div>
       </div>
       <div id="sessionSavePanel" class="finished hidden">
@@ -307,7 +305,11 @@
       <input class="volume" id="liveVoiceVolSlider" type="range" min="10" max="100" value="90">
     </div>
     <div id="liveSoundsList"></div>
-    <details>
+    <div class="choice-group">
+      <button id="mixerPauseBtn" class="text-action" type="button">Pause session</button>
+      <button id="mixerEndBtn" class="text-action" type="button">End session</button>
+    </div>
+    <details id="livePlaybackOptions">
       <summary>Playback options</summary>
       <div class="fader">
         <label for="livePauseMultSlider">Pause pacing <span id="livePauseMultVal">1.0×</span></label>
@@ -471,8 +473,7 @@
         elapsedSec: 0,
         totalEstSec: 600,
         pauseRemainingSec: 0,
-        pauseTotalSec: 0,
-        breathTick: 0
+        pauseTotalSec: 0
       },
       aiScriptCacheKey: '',
       aiGeneratedChapters: null,
@@ -486,7 +487,6 @@
     const soundElements = {};
     const soundFadeFrames = {};
     let sessionTicker = null;
-    let pauseTimer = null;
     let fadeinTimeout = null;
     let activeUtterance = null;
     let cachedBrowserVoices = [];
@@ -2048,7 +2048,7 @@
       if (state.session.phase !== 'done' || !state.session.chapters.length) return false;
       if (state.session.savedId) { showToast('This session is already in your library.'); return true; }
       const settings = state.session.settings || captureSessionSettings();
-      const entry = { id: Date.now().toString(36) + Math.random().toString(36).slice(2), title: document.getElementById('sessionSaveTitle').value.trim().slice(0, 100) || settings.intention.slice(0, 70) || 'A moment of stillness', createdAt: new Date().toISOString(), settings, chapters: JSON.parse(JSON.stringify(state.session.chapters)), totalEstSec: state.session.totalEstSec };
+      const entry = { id: Date.now().toString(36) + Math.random().toString(36).slice(2), title: document.getElementById('sessionSaveTitle').value.trim().slice(0, 100) || settings.intention.slice(0, 70) || 'A moment of stillness', createdAt: new Date().toISOString(), settings, chapters: JSON.parse(JSON.stringify(state.session.chapters.filter(chapter => !chapter.timingCue))), totalEstSec: state.session.totalEstSec };
       try {
         const library = readSessionLibrary();
         localStorage.setItem(key, JSON.stringify([entry, ...library]));
@@ -2106,6 +2106,7 @@
       }
       if (replaying) {
         state.session.active = false;
+        refreshQuietPlayer();
         state.session.kokoro?.stop();
         state.session.settings = null;
         state.session.chapters = [];
@@ -2158,11 +2159,98 @@
     }
 
     // ==================== SESSION ENGINE ====================
+    const RETURN_TO_BREATH = 'Let your next breath arrive naturally. Give yourself time to let it go.';
+    const MAX_PRACTICE_PAUSE = 54;
+
+    function timePracticeChapters(chapters, durationSec) {
+      if (!chapters.length) return chapters;
+      const extra = Math.max(0, Math.ceil((durationSec - 18) / MAX_PRACTICE_PAUSE) + 2 - chapters.length);
+      if (!extra) return chapters;
+      const spaced = [];
+      const cue = { text: RETURN_TO_BREATH, title: 'Return to the breath', cueType: 'practice', pauseSec: 40, timingCue: true };
+      const closing = chapters.length - 1;
+      let inserted = 0;
+      for (let index = 0; index < closing; index += 1) {
+        spaced.push(chapters[index]);
+        const throughGap = Math.round(extra * (index + 1) / closing);
+        while (inserted < throughGap) {
+          spaced.push(cue);
+          inserted += 1;
+        }
+      }
+      while (inserted < extra) {
+        spaced.push(cue);
+        inserted += 1;
+      }
+      spaced.push(chapters[closing]);
+      return spaced;
+    }
+
+    function pauseCapacity(chapter) {
+      if (chapter.cueType === 'settle') return 10;
+      if (chapter.cueType === 'close') return 8;
+      return MAX_PRACTICE_PAUSE;
+    }
+
+    function timedPauseSeconds(session) {
+      const chapters = session.chapters.slice(session.chapterIndex);
+      const budget = Math.max(0, session.targetSec - session.elapsedSec);
+      const secondsPerWord = session.spokenWords
+        ? Math.max(.3, Math.min(1.2, session.spokenSeconds / session.spokenWords)) : .6;
+      const upcomingSpeech = chapters.slice(1).reduce((time, chapter) =>
+        time + chapter.text.trim().split(/\s+/).length * secondsPerWord, 0);
+      const available = Math.max(0, budget - upcomingSpeech);
+      const weights = chapters.map(chapter => Math.max(1, chapter.pauseSec || 4));
+      const laterCapacity = chapters.slice(1).reduce((time, chapter) => time + pauseCapacity(chapter), 0);
+      const proportional = available * weights[0] / weights.reduce((sum, weight) => sum + weight, 0);
+      return Math.min(budget, pauseCapacity(chapters[0]), Math.max(available - laterCapacity, proportional));
+    }
+
+    function refreshQuietPlayer() {
+      const session = state.session;
+      const recoveryVisible = document.getElementById('audioRecoveryNotice').classList.contains?.('hidden') === false;
+      const quiet = state.view === 'player' && session.active && session.listeningStarted &&
+        !recoveryVisible && !['audio-error', 'audio-blocked'].includes(session.phase);
+      document.body.dataset.meditating = String(Boolean(quiet));
+      document.body.dataset.breathPaused = String(!session.active || session.paused || !quiet);
+      document.getElementById('mixerPauseBtn').textContent = session.paused ? 'Resume session' : 'Pause session';
+    }
+
+    function tickSession(session) {
+      if (session !== state.session || !session.active) return;
+      const now = globalThis.performance?.now?.() ?? Date.now();
+      const counting = !session.paused && ['speaking', 'pausing'].includes(session.phase);
+      if (counting) {
+        session.listeningStarted = true;
+        if (session.clockCounting) {
+          session.elapsedMs = Math.min(session.targetSec * 1000, session.elapsedMs + Math.max(0, now - session.clockAt));
+          session.elapsedSec = session.elapsedMs / 1000;
+        }
+      }
+      session.clockAt = now;
+      session.clockCounting = counting;
+      refreshQuietPlayer();
+      if (!counting) return;
+      updateProgressUI();
+      const secondsLeft = session.targetSec - session.elapsedSec;
+      if (session.phase === 'speaking' && secondsLeft < .8) {
+        voicePlayer.volume = (state.voiceVolume / 100) * Math.max(0, secondsLeft / .8);
+      }
+      if (session.elapsedSec >= session.targetSec) {
+        finishSession();
+      } else if (session.phase === 'pausing') {
+        session.pauseRemainingSec = Math.max(0, session.pauseEndsAt - session.elapsedSec);
+        if (!session.pauseRemainingSec) {
+          if (session.closingCuePending) void playClosingCue(session);
+          else advanceToNextChapter();
+        }
+      }
+    }
+
     function clearSessionTimers() {
       state.session.kokoro?.stop();
       state.session.kokoro = null;
       if (sessionTicker) { clearInterval(sessionTicker); sessionTicker = null; }
-      if (pauseTimer) { clearInterval(pauseTimer); pauseTimer = null; }
       if (fadeinTimeout) { clearTimeout(fadeinTimeout); fadeinTimeout = null; }
     }
 
@@ -2203,15 +2291,19 @@
         chapters: plan.chapters,
         chapterIndex: 0,
         phase: 'fadein',
+        targetSec: state.durationMin * 60,
         elapsedSec: 0,
-        totalEstSec: plan.totalEstSec,
+        elapsedMs: 0,
+        totalEstSec: state.durationMin * 60,
+        spokenWords: 0,
+        spokenSeconds: 0,
         pauseRemainingSec: 0,
-        pauseTotalSec: 0,
-        breathTick: 0
+        pauseTotalSec: 0
       };
 
       switchView('player');
       renderPlayerStatic();
+      refreshQuietPlayer();
       document.getElementById('skipChapterBtn').disabled = true;
       renderLiveMixer();
       updateProgressUI();
@@ -2226,15 +2318,12 @@
         plan = await maybeEnhanceWithAI(plan);
         if (!session.active || state.session !== session) return;
         state.session.chapters = plan.chapters;
-        state.session.totalEstSec = plan.totalEstSec;
         updateProgressUI();
       }
 
-      sessionTicker = setInterval(() => {
-        if (!state.session.active || state.session.paused || !['speaking', 'pausing'].includes(state.session.phase)) return;
-        state.session.elapsedSec += 1;
-        updateProgressUI();
-      }, 1000);
+      const session = state.session;
+      session.chapters = timePracticeChapters(session.chapters, session.targetSec);
+      sessionTicker = setInterval(() => tickSession(session), 200);
 
       if (state.session.studioNarration) {
         if (useKokoro) await prepareKokoroNarration(state.session);
@@ -2329,10 +2418,17 @@
             let audio;
             try {
               if (Date.now() >= voiceRetryAt) {
+                const repeated = session.chapters[chapterIndex].timingCue;
+                if (repeated && session.studioTimingClip) {
+                  chapterClips.push(session.studioTimingClip);
+                  continue;
+                }
                 audio = await requestPreparedClip(plan[chapterIndex][piece], voice, session.narrationModel, controller, session);
               }
               if (audio?.model && run === voicePlaybackRun && session === state.session) {
-                chapterClips.push(prepareClipData(audio));
+                const clip = prepareClipData(audio);
+                chapterClips.push(clip);
+                if (session.chapters[chapterIndex].timingCue) session.studioTimingClip = clip;
                 session.narrationModel ??= audio.model;
                 continue;
               }
@@ -2385,7 +2481,13 @@
     }
 
     async function prepareKokoroNarration(session) {
-      const buffer = session.kokoro ??= window.StillnessKokoro.create(session.chapters, requestKokoroClip);
+      const buffer = session.kokoro ??= window.StillnessKokoro.create(session.chapters, (text, signal) => {
+        if (text !== RETURN_TO_BREATH) return requestKokoroClip(text, signal);
+        return session.kokoroTimingClip ??= requestKokoroClip(text, signal).catch(error => {
+          session.kokoroTimingClip = null;
+          throw error;
+        });
+      });
       const isCurrent = () => session === state.session && session.active && session.kokoro === buffer;
       session.phase = 'preparing-voice';
       document.getElementById('membershipPlayerOptions').hidden = true;
@@ -2429,6 +2531,7 @@
       primeVoicePlayback();
       session.narrationMode = 'kokoro';
       session.narrationClips = null;
+      session.studioTimingClip = null;
       session.narrationPlan = null;
       void prepareKokoroNarration(session);
     }
@@ -2464,6 +2567,7 @@
       session.studioNarration = false;
       session.narrationMode = mode;
       session.narrationClips = null;
+      session.studioTimingClip = null;
       session.narrationPlan = null;
       session.paused = false;
       document.getElementById('narrationChoices').classList.add('hidden');
@@ -2521,6 +2625,7 @@
         } else {
           clip = clips[currentIndex];
         }
+        if (session.chapters[chapterIndex].timingCue) session.closingCueClip = clip;
         try {
           await playInlineAudioData(clip, () => {
             if (attempt !== playAttempt) return;
@@ -2540,10 +2645,11 @@
       if (state.session.studioNarration && !state.session.narrationReady) return;
       const ch = state.session.chapters[state.session.chapterIndex];
       if (!ch) {
-        finishSession();
+        finishAtRequestedTime(state.session);
         return;
       }
 
+      state.session.chapterStartedAt = state.session.elapsedSec;
       const voiceId = state.session.settings?.voiceId || state.voiceId;
       const voiceObj = VOICES.find(v => v.id === voiceId) || VOICES[0];
       state.session.phase = state.session.narrationReady ? 'loading-voice' : 'speaking';
@@ -2593,13 +2699,19 @@
       const ch = state.session.chapters[state.session.chapterIndex];
       if (!ch) return;
 
-      const isLast = state.session.chapterIndex >= state.session.chapters.length - 1;
-      const pauseSec = boundedPauseSeconds(ch, ch.pauseSec);
+      const session = state.session;
+      const isLast = session.chapterIndex >= session.chapters.length - 1;
+      if (Number.isFinite(session.chapterStartedAt) && session.elapsedSec > session.chapterStartedAt) {
+        session.spokenWords += ch.text.trim().split(/\s+/).length;
+        session.spokenSeconds += session.elapsedSec - session.chapterStartedAt;
+      }
+      if (isLast && session.targetSec) { finishAtRequestedTime(session); return; }
+      const pauseSec = session.targetSec ? timedPauseSeconds(session) : boundedPauseSeconds(ch, ch.pauseSec);
       if (pauseSec === 0) { advanceToNextChapter(); return; }
       state.session.phase = 'pausing';
       state.session.pauseTotalSec = pauseSec;
       state.session.pauseRemainingSec = pauseSec;
-      state.session.breathTick = 0;
+      state.session.pauseEndsAt = state.session.elapsedSec + pauseSec;
 
       if (!isLast) {
         document.getElementById('pauseActionRow').classList.remove('hidden');
@@ -2607,41 +2719,52 @@
         document.getElementById('pauseActionRow').classList.add('hidden');
       }
 
-      updatePauseOrb();
-
-      if (pauseTimer) clearInterval(pauseTimer);
-      pauseTimer = setInterval(() => {
-        if (!state.session.active || state.session.paused) return;
-        state.session.pauseRemainingSec -= 1;
-        state.session.breathTick += 1;
-        if (state.session.pauseRemainingSec <= 0) {
-          clearInterval(pauseTimer);
-          pauseTimer = null;
-          advanceToNextChapter();
-        } else {
-          updatePauseOrb();
-        }
-      }, 1000);
+      setOrbState('inhale', 'Breathing');
     }
 
-    function updatePauseOrb() {
-      const cycle = state.session.breathTick % 12;
-      let orbMode = 'inhale';
-      let phaseText = 'Breathe In';
-      if (cycle < 4) { orbMode = 'inhale'; phaseText = 'Breathe In'; }
-      else if (cycle < 6) { orbMode = 'hold'; phaseText = 'Soft Hold'; }
-      else { orbMode = 'exhale'; phaseText = 'Breathe Out'; }
+    function finishAtRequestedTime(session) {
+      if (!session.targetSec || session.elapsedSec >= session.targetSec) {
+        finishSession();
+        return;
+      }
+      const remaining = session.targetSec - session.elapsedSec;
+      session.closingCuePending = remaining > MAX_PRACTICE_PAUSE &&
+        Boolean(session.closingCueClip || session.studioTimingClip || session.deviceVoice);
+      session.phase = 'pausing';
+      session.pauseEndsAt = session.closingCuePending
+        ? session.elapsedSec + Math.min(MAX_PRACTICE_PAUSE, remaining - 8)
+        : session.targetSec;
+      setOrbState('inhale', 'Breathing');
+    }
 
-      setOrbState(orbMode, phaseText);
+    async function playClosingCue(session) {
+      session.closingCuePending = false;
+      session.phase = 'loading-voice';
+      const done = () => {
+        if (session === state.session && session.active) finishAtRequestedTime(session);
+      };
+      const retry = () => {
+        if (session !== state.session || !session.active) return;
+        session.phase = 'audio-error';
+        pendingVoiceAction = () => playClosingCue(session);
+        showPreparedAudioRecovery();
+      };
+      const clip = session.closingCueClip || session.studioTimingClip;
+      if (clip) {
+        try { await playInlineAudioData(clip, done, retry); }
+        catch (error) { retry(); }
+      } else {
+        const voice = VOICES.find(item => item.id === session.settings.voiceId) || VOICES[0];
+        if (!speakWithBrowserNaturalVoice(RETURN_TO_BREATH, voice, done, retry, session.deviceVoice)) retry();
+      }
     }
 
     function advanceToNextChapter() {
       if (!state.session.active || (state.session.studioNarration && !state.session.narrationReady)) return;
-      if (pauseTimer) { clearInterval(pauseTimer); pauseTimer = null; }
       stopVoicePlayback();
       state.session.chapterIndex += 1;
       if (state.session.chapterIndex >= state.session.chapters.length) {
-        finishSession();
+        finishAtRequestedTime(state.session);
       } else {
         playCurrentChapter();
       }
@@ -2655,7 +2778,11 @@
       stopVoicePlayback();
       state.session.phase = 'done';
       state.session.active = false;
+      refreshQuietPlayer();
       state.session.narrationClips = null;
+      state.session.studioTimingClip = null;
+      state.session.kokoroTimingClip = null;
+      state.session.closingCueClip = null;
       state.session.narrationPlan = null;
       state.session.narrationReady = false;
       document.getElementById('narrationChoices').classList.add('hidden');
@@ -2697,7 +2824,9 @@
         resumeSessionAudio();
         return;
       }
+      state.session.clockCounting = false;
       state.session.paused = !state.session.paused;
+      refreshQuietPlayer();
       if (state.session.paused) {
         voicePlayer.pause();
         try { if (window.speechSynthesis) window.speechSynthesis.pause(); } catch (e) {}
@@ -2759,49 +2888,19 @@
       switchView('studio');
     }
 
-    function drawBreathLine() {
-      const canvas = document.getElementById('breathLine');
-      const ctx = canvas.getContext?.('2d');
-      if (!ctx) return;
-      const width = canvas.clientWidth;
-      const height = canvas.clientHeight;
-      if (!width || !height) return;
-      const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
-      canvas.width = width * pixelRatio;
-      canvas.height = height * pixelRatio;
-      ctx.scale(pixelRatio, pixelRatio);
-      ctx.strokeStyle = '#edc4a0';
-      ctx.lineWidth = 1.4;
-      ctx.beginPath();
-      for (let x = 0; x <= width; x += 2) {
-        const t = x / width;
-        const y = height / 2 + Math.sin(t * Math.PI) ** 1.8 * Math.sin(t * Math.PI * 4 - 0.4) * 30;
-        if (x === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-
-    function setOrbState(mode, phaseLabel) {
-      const container = document.getElementById('orbContainer');
-      const breathing = mode !== 'listen';
-      const cycle = state.session.breathTick % 12;
-      const amplitude = mode === 'hold' ? 1 : mode === 'inhale' ? (cycle + 1) / 4 : mode === 'exhale' ? (12 - cycle) / 6 : 0;
-      document.getElementById('breathLine').style.transform = `scaleY(${0.25 + 0.75 * amplitude})`;
-      document.getElementById('orbPhaseLabel').textContent = breathing ? phaseLabel : '';
-      container.style.visibility = ['Settling In', 'Preparing Voice', 'Voice Unavailable'].includes(phaseLabel) ? 'hidden' : '';
-
+    function setOrbState(_mode, phaseLabel) {
       const status = document.getElementById('playerStatus');
       const nextStatus = {
         'Settling In': 'Preparing your session…',
         'Preparing Voice': 'Preparing narration…',
+        'Preparing Kokoro Heart': 'Preparing narration…',
         'Voice Unavailable': 'The selected voice is unavailable.',
         'Device Voice Paused': 'The device voice paused.',
         'Reading Pace': 'Follow the script at your own pace.',
         'Buffering Voice': 'Resuming narration…'
       }[phaseLabel] || '';
       if (status.textContent !== nextStatus) status.textContent = nextStatus;
-      if (phaseLabel === 'Listening') drawBreathLine();
+      refreshQuietPlayer();
     }
 
     function setPlayerText(text, visible) {
@@ -3098,7 +3197,6 @@
       document.getElementById('playerListening').classList.remove('hidden');
       document.getElementById('endSessionBtn').textContent = 'End session';
       title.focus?.();
-      drawBreathLine();
     }
 
     function updateProgressUI() {
@@ -3219,17 +3317,6 @@
         }
       });
       document.getElementById('creditsBtn').addEventListener('click', () => document.getElementById('creditsDialog').showModal());
-      const breathButton = document.getElementById('toggleBreathBtn');
-      breathButton.addEventListener('click', () => {
-        const guide = document.getElementById('orbContainer');
-        guide.classList.toggle('guide-off');
-        const visible = !guide.classList.contains('guide-off');
-        guide.setAttribute('aria-hidden', String(!visible));
-        breathButton.setAttribute('aria-pressed', String(visible));
-        breathButton.textContent = visible ? 'Hide breathing guide' : 'Show breathing guide';
-        if (visible) drawBreathLine();
-      });
-      window.addEventListener('resize', drawBreathLine);
 
       document.getElementById('voiceVolumeSlider').addEventListener('input', (e) => {
         state.voiceVolume = Number(e.target.value);
@@ -3276,6 +3363,8 @@
 
       document.getElementById('endSessionBtn').addEventListener('click', endSession);
       document.getElementById('playPauseBtn').addEventListener('click', toggleSessionPause);
+      document.getElementById('mixerPauseBtn').addEventListener('click', toggleSessionPause);
+      document.getElementById('mixerEndBtn').addEventListener('click', endSession);
       const liveMixer = document.getElementById('liveMixerPanel');
       document.getElementById('restartSessionBtn').addEventListener('click', () => {
         liveMixer.close();

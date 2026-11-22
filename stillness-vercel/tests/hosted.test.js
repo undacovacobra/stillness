@@ -127,6 +127,51 @@ for (const path of ['../index.html', '../public/index.html']) {
     assert.ok(p.run('state.session.pauseRemainingSec') <= 60);
   });
 
+  test(`${path}: the quiet player leaves a breathing circle and access to the sound mixer`, () => {
+    const html = readFileSync(new URL(path, import.meta.url), 'utf8');
+    assert.match(html, /id="breathingCircle"/);
+    assert.match(html, /id="mixerPauseBtn"/);
+    assert.match(html, /id="mixerEndBtn"/);
+    const p = page(path, async () => {});
+    p.run(`state.view='player';state.session.active=true;state.session.listeningStarted=true;
+      state.session.phase='speaking';refreshQuietPlayer();`);
+    assert.equal(p.run('document.body.dataset.meditating'), 'true');
+    p.run(`state.session.phase='audio-error';refreshQuietPlayer();`);
+    assert.equal(p.run('document.body.dataset.meditating'), 'false');
+  });
+
+  test(`${path}: a five-minute practice stays active past its last short narration and finishes at five minutes`, async () => {
+    const p = page(path, async () => {});
+    p.run(`var tick, now=0; performance={now:()=>now};
+      setInterval=fn=>{tick=fn;return 1};state.durationMin=5;state.serverHostedKey=false;
+      state.sounds.forEach(sound=>sound.enabled=false);`);
+    await p.run('startSession()');
+    assert.equal(p.run('state.session.totalEstSec'), 300);
+    p.run(`state.session.phase='speaking';tick();now=150000;tick();
+      state.session.chapterIndex=state.session.chapters.length-1;
+      advanceToNextChapter();`);
+    assert.equal(p.run('state.session.active'), true);
+    p.run('now=299900;tick()');
+    assert.equal(p.run('state.session.active'), true);
+    p.run('now=300000;tick()');
+    assert.equal(p.run('state.session.phase'), 'done');
+    assert.equal(p.run('state.session.elapsedSec'), 300);
+  });
+
+  test(`${path}: long practices have enough breathing intervals without extending any one pause`, () => {
+    const p = page(path, async () => {});
+    const plan = p.run(`state.durationMin=60;state.wordiness='minimal';
+      timePracticeChapters(getActiveSessionPlan().chapters, 3600)`);
+    assert.equal(plan.at(-1).cueType, 'close');
+    assert.ok(plan.some(chapter => chapter.timingCue));
+    assert.ok(p.run(`timePracticeChapters(getActiveSessionPlan().chapters, 3600)
+      .reduce((seconds, chapter) => seconds + pauseCapacity(chapter), 0)`) >= 3600);
+    assert.ok(p.run(`timedPauseSeconds({
+      targetSec: 3600, elapsedSec: 8, chapterIndex: 1,
+      chapters: timePracticeChapters(getActiveSessionPlan().chapters, 3600)
+    })`) <= 54);
+  });
+
   test(`${path}: a phone interruption pauses progress and offers audio recovery`, () => {
     const p = page(path, async () => {});
     p.run(`state.session.active=true; state.session.phase='speaking'; voicePlayer.paused=true; voicePlayer.ended=false;`);
@@ -155,11 +200,12 @@ for (const path of ['../index.html', '../public/index.html']) {
 
   test(`${path}: the session clock waits for voice playback and freezes on an audio failure`, async () => {
     const p = page(path, async () => {});
-    p.run(`var tick; setInterval = fn => {tick=fn;return 1}; state.sounds.forEach(sound=>sound.enabled=false);`);
+    p.run(`var tick, now=0; performance={now:()=>now};
+      setInterval = fn => {tick=fn;return 1}; state.sounds.forEach(sound=>sound.enabled=false);`);
     await p.run('startSession()');
-    p.run(`state.session.phase='loading-voice'; tick(); state.session.phase='audio-error'; tick();`);
+    p.run(`state.session.phase='loading-voice'; tick(); now+=3500; state.session.phase='audio-error'; tick();`);
     assert.equal(p.run('state.session.elapsedSec'), 0);
-    p.run(`state.session.phase='speaking'; tick();`);
+    p.run(`state.session.phase='speaking'; tick(); now+=1000; tick();`);
     assert.equal(p.run('state.session.elapsedSec'), 1);
   });
 
