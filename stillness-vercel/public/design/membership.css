@@ -69,6 +69,8 @@
 body[data-view="player"] #memberNavigation .member-entry { display: none; }
 #membershipGreeting { margin: 0 0 17px; color: var(--soft); line-height: 1.45; overflow-wrap: anywhere; }
 #membershipAllowance { margin-top: 10px; color: var(--soft); font-size: .9rem; }
+.member-voice-options { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-block: 10px; }
+.member-voice-options > p { flex-basis: 100%; margin: 0; }
 #membershipStudioProfile { margin-top: 2px; }
 #memberAdminList { margin-top: 20px; }
 .member-admin-row { border-top: 1px solid var(--rule); padding: 16px 0; }

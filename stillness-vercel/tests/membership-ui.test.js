@@ -67,6 +67,15 @@ test('both entry pages keep the card-free trial action on welcome as well as Pro
   }
 });
 
+test('both entry pages pair a free Kokoro session with a premium-minute purchase', () => {
+  for (const file of ['../index.html', '../public/index.html']) {
+    const html = readFileSync(new URL(file, import.meta.url), 'utf8');
+    for (const id of ['membershipStudioOptions', 'membershipScriptOptions', 'membershipPlayerOptions']) {
+      assert.match(html, new RegExp(`id="${id}"[^>]*hidden[^>]*>[\\s\\S]*?data-start-kokoro[^>]*>Use Kokoro Heart · Free[\\s\\S]*?data-buy-voice-time[^>]*>Buy 60 minutes · \\$4.99`));
+    }
+  }
+});
+
 test('a saved session cannot be opened after library access is revoked', () => {
   const identity = { current: 'first' };
   const { data, run } = browserStorage(identity);

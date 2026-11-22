@@ -75,7 +75,8 @@ export function withUsage(kind, generation, validate) {
         statusCode: 200,
         status(code) { this.statusCode = code; return this; },
         setHeader(name, value) { headers[name] = value; },
-        json(body) { this.body = body; return this; }
+        json(body) { this.body = body; return this; },
+        send(body) { this.body = body; return this; }
       };
       await generation(req, result);
       const success = result.statusCode >= 200 && result.statusCode < 300;
@@ -88,6 +89,7 @@ export function withUsage(kind, generation, validate) {
       }
       if (success && kind === 'voice' && !used) return fail(res, 502, 'The audio could not be read. Please try again.');
       for (const [name, value] of Object.entries(headers)) res.setHeader(name, value);
+      if (success && kind === 'kokoro') return res.status(result.statusCode).send(result.body);
       return res.status(result.statusCode).json(result.body);
     } catch {
       if (held) await settleUsage(member.id, id, 0).catch(() => null);

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import tts from '../api/tts.js';
 import script from '../api/script.js';
+import { withUsage } from '../lib/member-usage.js';
 
 const app = 'https://stillness-members.example';
 const sb = 'https://auth.example';
@@ -42,6 +43,33 @@ test('member without usage cannot reach Gemini', async t => {
   const res=response(); await tts(req({text:'Take a breath.', voiceName:'Algieba'}),res);
   assert.equal(res.code,402);
   assert.equal(res.body.code,'usage_exhausted');
+});
+test('Kokoro reserves a rate-limited slot without charging narration minutes', async t => {
+  setup(t);
+  const wave = Buffer.from('test wav');
+  const handler = withUsage('kokoro', (_req, res) => {
+    res.setHeader('Content-Type', 'audio/wav');
+    return res.status(200).send(wave);
+  }, () => null);
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    const route = String(url);
+    if (route.endsWith('/auth/v1/user')) return Response.json(user);
+    const body = JSON.parse(options.body);
+    if (route.endsWith('/stillness_reserve_usage')) {
+      assert.equal(body.p_kind, 'kokoro');
+      assert.equal(body.p_seconds, 0);
+      return Response.json({ allowed: true, remaining_seconds: 0, topup_seconds: 0 });
+    }
+    assert(route.endsWith('/stillness_settle_usage'));
+    assert.equal(body.p_used_seconds, 0);
+    return Response.json({ accepted: true, remaining_seconds: 0, topup_seconds: 0 });
+  });
+  const res = response();
+  res.send = res.json;
+  await handler(req({ text: 'Breathe slowly.' }), res);
+  assert.equal(res.code, 200);
+  assert.equal(res.body, wave);
+  assert.equal(res.headers['Content-Type'], 'audio/wav');
 });
 test('generated audio is sent only after successfully recording its measured seconds', async t => {
   setup(t);

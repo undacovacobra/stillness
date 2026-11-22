@@ -104,6 +104,12 @@
     return !generationProblem();
   }
 
+  function canUseKokoro() {
+    const member = snapshot.member;
+    return Boolean(snapshot.user && !isRecovery() && member?.name && member?.goal &&
+      member.status === 'active' && memberIsActive(member));
+  }
+
   function libraryKey() {
     return snapshot.user?.id && !isRecovery() && memberIsActive(snapshot.member)
       ? `stillness_session_library_v1:${snapshot.user.id}` : null;
@@ -150,15 +156,21 @@
   function updateBalance() {
     const member = snapshot.member;
     const problem = generationProblem();
+    const kokoro = canUseKokoro() && remainingSeconds(member) <= 0;
     text('membershipGreeting', accountGreeting(member));
-    text('membershipAllowance', problem || `${readableTime(remainingSeconds(member))} of narration available`);
+    text('membershipAllowance', kokoro ? 'You’ve used your premium narration minutes.' :
+      problem || `${readableTime(remainingSeconds(member))} of narration available`);
     byId('beginMeditationBtn').setAttribute('aria-describedby', 'membershipAllowance');
     for (const id of ['beginMeditationBtn', 'beginFromScriptBtn']) {
       byId(id).disabled = Boolean(problem);
+      reveal(id, !kokoro);
     }
     text('membershipStudioProfile', trialCanStart(member) ? 'View free trial' : 'Open membership settings');
-    reveal('membershipStudioProfile', Boolean(problem) && Boolean(snapshot.user));
-    reveal('membershipScriptProfile', Boolean(problem) && Boolean(snapshot.user));
+    reveal('membershipStudioOptions', kokoro);
+    reveal('membershipScriptOptions', kokoro);
+    if (!canUseKokoro()) reveal('membershipPlayerOptions', false);
+    reveal('membershipStudioProfile', !kokoro && Boolean(problem) && Boolean(snapshot.user));
+    reveal('membershipScriptProfile', !kokoro && Boolean(problem) && Boolean(snapshot.user));
     reveal('memberAdminButton', snapshot.owner === true);
   }
 
@@ -682,6 +694,10 @@
     }
     byId('memberWelcomeLater').addEventListener('click', () => showPage('studio'));
     for (const button of document.querySelectorAll('[data-billing]')) button.addEventListener('click', () => billingAction(button));
+    for (const button of document.querySelectorAll('[data-buy-voice-time]')) button.addEventListener('click', () => {
+      showProfile();
+      void billingAction(byId('memberTopup'));
+    });
     for (const button of document.querySelectorAll('[data-member-profile]')) button.addEventListener('click', () => showProfile());
     byId('memberAdminButton').addEventListener('click', renderOwner);
     byId('memberAdminMore').addEventListener('click', loadOwnerMembers);
@@ -691,6 +707,7 @@
 
   window.StillnessMembership = {
     canGenerate,
+    canUseKokoro,
     libraryKey,
     generationProblem,
     requestGeneration,
