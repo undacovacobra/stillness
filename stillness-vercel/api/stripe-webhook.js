@@ -8,7 +8,7 @@ function reply(status, body) {
 export async function POST(request) {
   let settings;
   try {
-    settings = stripeSettings();
+    settings = stripeSettings(process.env, { forWebhook: true });
   } catch {
     return reply(503, { error: 'Stripe webhook is not configured.' });
   }

@@ -262,3 +262,32 @@ test('Vercel Stripe verifies raw signatures and safely acknowledges a stale setu
   assert.equal(altered.status, 400);
   assert.equal(transport.mock.callCount(), 0);
 });
+
+test('signed live notifications work while new checkouts stay disabled', async t => {
+  const config = {
+    VERCEL_ENV: 'production',
+    STRIPE_SECRET_KEY: ['sk', 'live', 'fixture'].join('_'),
+    STRIPE_WEBHOOK_SECRET: 'whsec_fixture',
+    STRIPE_MONTHLY_PRICE_ID: 'price_month',
+    STRIPE_TOPUP_PRICE_ID: 'price_extra',
+    STRIPE_LIVE_ENABLED: 'false',
+  };
+  const previous = Object.fromEntries(Object.keys(config).map(name => [name, process.env[name]]));
+  Object.assign(process.env, config);
+  t.after(() => {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+  assert.throws(() => stripeSettings(), { status: 503 });
+  const timestamp = Math.floor(Date.now() / 1000);
+  const body = JSON.stringify({ ...event('product.updated', { id: 'prod_fixture' }), livemode: true, created: timestamp });
+  const digest = createHmac('sha256', config.STRIPE_WEBHOOK_SECRET).update(`${timestamp}.${body}`).digest('hex');
+  const request = new Request('https://stillness.example/api/stripe-webhook', {
+    method: 'POST', body, headers: { 'stripe-signature': `t=${timestamp},v1=${digest}` },
+  });
+  const response = await stripeWebhook(request);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { received: true });
+});

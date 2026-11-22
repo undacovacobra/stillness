@@ -17,7 +17,7 @@ export class BillingError extends Error {
   }
 }
 
-export function stripeSettings(env = process.env) {
+export function stripeSettings(env = process.env, { forWebhook = false } = {}) {
   const secret = env.STRIPE_SECRET_KEY?.trim();
   const monthlyPriceId = env.STRIPE_MONTHLY_PRICE_ID?.trim();
   const topupPriceId = env.STRIPE_TOPUP_PRICE_ID?.trim();
@@ -28,7 +28,8 @@ export function stripeSettings(env = process.env) {
   const live = /^(?:sk|rk)_live_/.test(secret);
   const webhookSecret = env.STRIPE_WEBHOOK_SECRET?.trim();
   if ((env.VERCEL_ENV === 'production' && !live) ||
-      (live && (env.STRIPE_LIVE_ENABLED !== 'true' || !/^whsec_[\w-]+$/.test(webhookSecret || '')))) {
+      (live && !/^whsec_[\w-]+$/.test(webhookSecret || '')) ||
+      (live && !forWebhook && env.STRIPE_LIVE_ENABLED !== 'true')) {
     throw new BillingError(503, 'Live billing is being set up. Please check back shortly.');
   }
   return {
