@@ -63,7 +63,7 @@
 
       <div id="memberWelcome" hidden>
         <h1 id="memberWelcomeTitle" tabindex="-1">Make it yours</h1>
-        <p class="member-lede">Choose what you want to make more room for.</p>
+        <p id="memberWelcomeLead" class="member-lede">Choose what you want to make more room for.</p>
         <form id="memberWelcomeForm" class="member-form">
           <label for="memberWelcomeName">What should we call you?
             <input id="memberWelcomeName" name="name" type="text" autocomplete="given-name" maxlength="60" required>
@@ -80,8 +80,16 @@
           <label for="memberWelcomeCustom" hidden>Your goal
             <input id="memberWelcomeCustom" name="customGoal" type="text" maxlength="80">
           </label>
-          <button class="main-button" type="submit">Continue to Stillness</button>
+          <button class="main-button" type="submit">Continue</button>
         </form>
+        <div id="memberWelcomeTrial" class="member-profile-section" hidden>
+          <p id="memberWelcomeTrialTerms" class="member-lede"></p>
+          <p class="member-detail">Only generated narration uses minutes, including voice previews. Quiet pauses and background sounds are included.</p>
+          <div class="member-actions">
+            <button id="memberWelcomeStartTrial" class="main-button" type="button">Start 10-day trial</button>
+            <button id="memberWelcomeLater" class="text-action member-inline" type="button">Maybe later</button>
+          </div>
+        </div>
         <p id="memberWelcomeFeedback" class="notice" role="status"></p>
         <button class="text-action member-inline" data-member-logout type="button">Sign out</button>
       </div>
@@ -2018,7 +2026,11 @@
     }
     function saveCompletedSession() {
       const key = sessionLibraryKey();
-      if (!key || state.session.phase !== 'done' || !state.session.chapters.length) return false;
+      if (!key) {
+        window.StillnessMembership?.openLibraryProfile?.();
+        return false;
+      }
+      if (state.session.phase !== 'done' || !state.session.chapters.length) return false;
       if (state.session.savedId) { showToast('This session is already in your library.'); return true; }
       const settings = state.session.settings || captureSessionSettings();
       const entry = { id: Date.now().toString(36) + Math.random().toString(36).slice(2), title: document.getElementById('sessionSaveTitle').value.trim().slice(0, 100) || settings.intention.slice(0, 70) || 'A moment of stillness', createdAt: new Date().toISOString(), settings, chapters: JSON.parse(JSON.stringify(state.session.chapters)), totalEstSec: state.session.totalEstSec };
@@ -2062,7 +2074,42 @@
         catch (error) { showToast('Could not update your library. Please try again.'); }
       }));
     }
+    function lockSessionLibrary() {
+      document.getElementById('sessionLibraryList').replaceChildren();
+      const saved = state.loadedSession;
+      const needsRedirect = state.view === 'library' || (state.view === 'script' && saved);
+      const replaying = state.view === 'player' && state.session.fromSavedSession;
+      if (saved) {
+        if (state.intention === saved.settings.intention) {
+          state.intention = '';
+          document.getElementById('intentionInput').value = '';
+          state.customEditedChapters = null;
+        }
+        state.loadedSession = null;
+        document.getElementById('scriptChaptersList').replaceChildren();
+      }
+      if (replaying) {
+        state.session.active = false;
+        state.session.settings = null;
+        state.session.chapters = [];
+        state.session.narrationClips = null;
+        state.session.narrationPlan = null;
+        state.session.narrationReady = false;
+        setPlayerText('', false);
+        endSession();
+      } else if (needsRedirect) {
+        switchView('studio');
+      }
+      return Boolean(replaying || needsRedirect);
+    }
+
+    window.StillnessStudio = { lockLibrary: lockSessionLibrary };
+
     function restoreSavedSession(id, replay = false) {
+      if (!sessionLibraryKey()) {
+        window.StillnessMembership?.openLibraryProfile?.();
+        return false;
+      }
       if (replay && !generationCanStart()) return false;
       const entry = readSessionLibrary().find(item => item.id === id);
       if (!entry) return false;
@@ -2125,6 +2172,7 @@
         active: true,
         paused: false,
         settings: captureSessionSettings(),
+        fromSavedSession: state.loadedSession?.cacheKey === currentScriptCacheKey(),
         studioNarration: Boolean(state.serverHostedKey),
         chapters: plan.chapters,
         chapterIndex: 0,
@@ -2642,6 +2690,10 @@
 
     // ==================== RENDERING ====================
     function switchView(viewName) {
+      if (viewName === 'library' && !sessionLibraryKey()) {
+        window.StillnessMembership?.openLibraryProfile?.();
+        return;
+      }
       const previousView = state.view;
       state.view = viewName;
       document.body.dataset.view = viewName;

@@ -58,3 +58,24 @@ test('both entry pages offer Google and email, with a separate card-free trial a
     assert.doesNotMatch(html, /memberOAuthApple|apple-sign-in|free with a card/i);
   }
 });
+
+test('both entry pages keep the card-free trial action on welcome as well as Profile', () => {
+  for (const file of ['../index.html', '../public/index.html']) {
+    const html = readFileSync(new URL(file, import.meta.url), 'utf8');
+    assert.match(html, /id="memberWelcomeTrial"[^>]*hidden[\s\S]*?id="memberWelcomeStartTrial"[^>]*>Start 10-day trial/);
+    assert.match(html, /id="memberStartTrial"[^>]*>Start 10-day trial/);
+  }
+});
+
+test('a saved session cannot be opened after library access is revoked', () => {
+  const identity = { current: 'first' };
+  const { data, run } = browserStorage(identity);
+  const entry = {id:'locked', title:'Private', settings:{intention:'Personal'}, chapters:[{text:'Rest.'}]};
+  const key = 'stillness_session_library_v1:first';
+  data.set(key, JSON.stringify([entry]));
+  assert.equal(run('readSessionLibrary().length'), 1);
+  identity.current = null;
+  assert.equal(run('restoreSavedSession("locked")'), false);
+  assert.equal(run('readSessionLibrary().length'), 0);
+  assert.equal(JSON.parse(data.get(key))[0].id, 'locked');
+});

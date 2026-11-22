@@ -2,6 +2,8 @@
   const accountPath = '/api/account';
   const billingPath = '/api/billing';
   const plans = new Set(['trialing', 'active']);
+  const trialOffer = 'Try 15 narrated minutes over 10 days. No card required. The trial ends automatically.';
+  const libraryLocked = 'Start a trial or subscribe to access your saved sessions.';
   const goals = {
     sleep: 'Let the day settle.',
     focus: 'Make a little room for what matters.',
@@ -26,13 +28,15 @@
   let oauthNotice = 'Checking Google sign-in…';
   let pendingGenerationProblem = '';
   let refreshTimer;
+  let entitlementTimer;
   let refreshRequest;
   let accountRevision = 0;
   let channel;
   let ownerOffset = null;
 
   function memberIsActive(member) {
-    return member && plans.has(member.status) && Date.parse(member.period_ends_at) > Date.now();
+    return member && member.access_active !== false && plans.has(member.status) &&
+      Date.parse(member.period_ends_at) > Date.now();
   }
 
   function trialCanStart(member) {
@@ -101,7 +105,25 @@
   }
 
   function libraryKey() {
-    return snapshot.user?.id && !isRecovery() ? `stillness_session_library_v1:${snapshot.user.id}` : null;
+    return snapshot.user?.id && !isRecovery() && memberIsActive(snapshot.member)
+      ? `stillness_session_library_v1:${snapshot.user.id}` : null;
+  }
+
+  function refreshEntitlement() {
+    window.clearTimeout(entitlementTimer);
+    updateBalance();
+    if (snapshot.user && !isRecovery()) renderBilling();
+    if (!libraryKey()) {
+      const closed = window.StillnessStudio?.lockLibrary?.();
+      if (closed && visiblePage === 'studio') showProfile(libraryLocked);
+      return;
+    }
+    const untilEnd = Date.parse(snapshot.member.period_ends_at) - Date.now();
+    const delay = Math.min(Math.max(untilEnd, 0) + 1, 2_147_483_647);
+    entitlementTimer = window.setTimeout(() => {
+      refreshEntitlement();
+      void refreshAccount().catch(() => {});
+    }, delay);
   }
 
   async function apiRequest(path, payload) {
@@ -161,7 +183,7 @@
       : paid
         ? 'Your subscription includes 120 narrated minutes per paid period.'
         : canStart
-          ? 'Try 15 narrated minutes over 10 days. No card required. The trial ends automatically.'
+          ? trialOffer
           : 'Subscribe for 120 narrated minutes per month.');
     reveal('memberBalance', eligible || Number(member?.topup_seconds) > 0);
     text('memberIncluded', readableTime(eligible ? member.remaining_seconds : 0));
@@ -176,9 +198,20 @@
     reveal('memberPortal', hasBilling);
   }
 
+  function renderWelcome() {
+    const member = snapshot.member;
+    const ready = Boolean(member?.name && member?.goal && trialCanStart(member));
+    reveal('memberWelcomeForm', !ready);
+    reveal('memberWelcomeTrial', ready);
+    text('memberWelcomeTrialTerms', trialOffer);
+    text('memberWelcomeTitle', ready ? 'Start your free trial' : 'Make it yours');
+    text('memberWelcomeLead', ready ? accountGreeting(member) : 'Choose what you want to make more room for.');
+  }
+
   function showPage(page, { focus = true } = {}) {
     visiblePage = page;
     if (page === 'login') renderOAuthOptions();
+    if (page === 'welcome') renderWelcome();
     const panel = byId('memberPanel');
     reveal('memberPanel', page !== 'studio');
     reveal('memberStudio', page === 'studio');
@@ -272,13 +305,14 @@
     snapshot = next;
     if (isRecovery() && authMode !== 'recovery') setAuthMode('recovery');
     if (!isRecovery() && authMode === 'recovery') setAuthMode('login');
-    updateBalance();
-    if (snapshot.user && !isRecovery()) renderBilling();
+    refreshEntitlement();
     const page = recommendedPage();
     const ownerAccessRevoked = visiblePage === 'admin' && !snapshot.owner;
     if (ownerAccessRevoked) byId('memberAdminList').replaceChildren();
-    if (navigate || visiblePage === 'loading' || ownerAccessRevoked || page === 'login' && visiblePage !== 'login') {
-      showPage(page, { focus: navigate });
+    const trialAlreadyStarted = visiblePage === 'welcome' && page === 'studio' && !trialCanStart(snapshot.member);
+    if (navigate || visiblePage === 'loading' || ownerAccessRevoked || trialAlreadyStarted ||
+        page === 'login' && visiblePage !== 'login') {
+      showPage(page, { focus: navigate || trialAlreadyStarted });
     }
   }
 
@@ -396,13 +430,19 @@
 
   async function submitProfile(event, feedbackId) {
     event.preventDefault();
+    const fromWelcome = event.currentTarget.id === 'memberWelcomeForm';
     const { name, goal, customGoal } = dataFrom(event.currentTarget);
     const selectedGoal = goal === 'custom' ? customGoal.trim() : goal;
     await withButton(event.submitter, feedbackId, async () => {
       if (!name.trim() || !selectedGoal) throw new Error('Enter your name and choose a goal.');
       accountRevision++;
       const result = await apiRequest(accountPath, { action: 'profile', name: name.trim(), goal: selectedGoal });
-      applySnapshot(result.user ? result : await apiRequest(accountPath), { navigate: visiblePage === 'welcome' });
+      const next = result.user ? result : await apiRequest(accountPath);
+      applySnapshot(next, { navigate: fromWelcome && !trialCanStart(next.member) });
+      if (fromWelcome && visiblePage === 'welcome') {
+        showPage('welcome');
+        return;
+      }
       text(feedbackId, 'Your details are saved.');
     });
   }
@@ -457,7 +497,9 @@
 
   async function startTrial(button) {
     if (!trialCanStart(snapshot.member)) return;
-    await withButton(button, 'memberBillingFeedback', async () => {
+    const fromWelcome = visiblePage === 'welcome';
+    const feedback = fromWelcome ? 'memberWelcomeFeedback' : 'memberBillingFeedback';
+    await withButton(button, feedback, async () => {
       accountRevision++;
       let result;
       try {
@@ -466,10 +508,10 @@
         void refreshAccount().catch(() => {});
         throw error;
       }
-      applySnapshot(result);
       if (!memberIsActive(result.member) || result.member.status !== 'trialing') {
         throw new Error('Stillness couldn’t confirm the trial. Check your membership and try again.');
       }
+      applySnapshot(result, { navigate: fromWelcome });
       if (visiblePage === 'profile') {
         text('memberBillingFeedback', 'Your free trial has started. There’s no charge.');
         byId('memberPlanStatus').focus();
@@ -610,7 +652,10 @@
       channel.addEventListener('message', () => refreshAccount().catch(() => {}));
     }
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && visiblePage !== 'loading') refreshAccount().catch(() => {});
+      if (document.visibilityState === 'visible' && visiblePage !== 'loading') {
+        refreshEntitlement();
+        void refreshAccount().catch(() => {});
+      }
     });
     byId('memberRetry').addEventListener('click', () => loadMembership());
     byId('memberAuthForm').addEventListener('submit', submitAuth);
@@ -619,6 +664,8 @@
       if (event.persisted) {
         oauthPending = false;
         renderOAuthOptions();
+        refreshEntitlement();
+        void refreshAccount().catch(() => {});
       }
     });
     byId('memberAuthSwitch').addEventListener('click', () => setAuthMode(authMode === 'login' ? 'signup' : 'login'));
@@ -630,7 +677,10 @@
     byId('memberBack').addEventListener('click', () => showPage(recommendedPage()));
     for (const prefix of ['Welcome', 'Profile']) byId(`member${prefix}Goal`).addEventListener('change', () => syncCustomGoal(prefix));
     for (const button of document.querySelectorAll('[data-member-logout]')) button.addEventListener('click', () => signOut(button));
-    byId('memberStartTrial').addEventListener('click', event => startTrial(event.currentTarget));
+    for (const id of ['memberWelcomeStartTrial', 'memberStartTrial']) {
+      byId(id).addEventListener('click', event => startTrial(event.currentTarget));
+    }
+    byId('memberWelcomeLater').addEventListener('click', () => showPage('studio'));
     for (const button of document.querySelectorAll('[data-billing]')) button.addEventListener('click', () => billingAction(button));
     for (const button of document.querySelectorAll('[data-member-profile]')) button.addEventListener('click', () => showProfile());
     byId('memberAdminButton').addEventListener('click', renderOwner);
@@ -645,6 +695,7 @@
     generationProblem,
     requestGeneration,
     generationDenial: () => pendingGenerationProblem,
+    openLibraryProfile: () => showProfile(libraryLocked),
     openGenerationProfile() {
       showProfile(pendingGenerationProblem || generationProblem());
     }

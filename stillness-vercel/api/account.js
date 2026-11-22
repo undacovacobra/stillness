@@ -61,7 +61,8 @@ function publicData(member) {
     user_id, name, goal, status, period_ends_at, trial_used, remaining_seconds,
     topup_seconds, last_used_at, cancel_at_period_end,
     billing_customer: Boolean(stripe_customer_id), has_subscription: Boolean(subscription_id),
-    trial_eligible: !trial_used && status === 'inactive' && !subscription_id
+    trial_eligible: !trial_used && status === 'inactive' && !subscription_id,
+    access_active: ['trialing', 'active'].includes(status) && Date.parse(period_ends_at) > Date.now()
   };
 }
 
