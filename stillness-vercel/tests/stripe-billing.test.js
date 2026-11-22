@@ -193,9 +193,22 @@ test('live Stripe requires explicit confirmation in environment configuration', 
   const env = {
     STRIPE_SECRET_KEY: ['sk', 'live', 'fixture'].join('_'),
     STRIPE_MONTHLY_PRICE_ID: 'price_month', STRIPE_TOPUP_PRICE_ID: 'price_extra',
+    STRIPE_WEBHOOK_SECRET: 'whsec_fixture',
   };
   assert.throws(() => stripeSettings(env), { status: 503 });
   assert.equal(stripeSettings({ ...env, STRIPE_LIVE_ENABLED: 'true' }).live, true);
+  assert.throws(() => stripeSettings({
+    ...env, STRIPE_LIVE_ENABLED: 'true', STRIPE_WEBHOOK_SECRET: undefined,
+  }), { status: 503 });
+});
+
+test('Stripe sandbox keys only enable checkout outside production', () => {
+  const env = {
+    STRIPE_SECRET_KEY: ['sk', 'test', 'fixture'].join('_'),
+    STRIPE_MONTHLY_PRICE_ID: 'price_month', STRIPE_TOPUP_PRICE_ID: 'price_extra',
+  };
+  assert.equal(stripeSettings({ ...env, VERCEL_ENV: 'preview' }).live, false);
+  assert.throws(() => stripeSettings({ ...env, VERCEL_ENV: 'production' }), { status: 503 });
 });
 
 test('anonymous and cross-origin requests cannot start a billing action', async t => {

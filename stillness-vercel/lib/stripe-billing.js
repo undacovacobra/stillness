@@ -26,12 +26,13 @@ export function stripeSettings(env = process.env) {
     throw new BillingError(503, 'Billing is being set up. Please check back shortly.');
   }
   const live = /^(?:sk|rk)_live_/.test(secret);
-  if (live && env.STRIPE_LIVE_ENABLED !== 'true') {
+  const webhookSecret = env.STRIPE_WEBHOOK_SECRET?.trim();
+  if ((env.VERCEL_ENV === 'production' && !live) ||
+      (live && (env.STRIPE_LIVE_ENABLED !== 'true' || !/^whsec_[\w-]+$/.test(webhookSecret || '')))) {
     throw new BillingError(503, 'Live billing is being set up. Please check back shortly.');
   }
   return {
-    secret, monthlyPriceId, topupPriceId, live,
-    webhookSecret: env.STRIPE_WEBHOOK_SECRET?.trim(),
+    secret, monthlyPriceId, topupPriceId, live, webhookSecret,
     portalConfiguration: env.STRIPE_BILLING_PORTAL_CONFIGURATION_ID?.trim(),
   };
 }
