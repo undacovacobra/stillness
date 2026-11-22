@@ -40,6 +40,20 @@ export function saveProfile(userId, { name, goal }) {
   return membershipRpc('stillness_save_profile', { p_user_id: userId, p_name: name, p_goal: goal });
 }
 
+export function setEmailPreference(userId, enabled) {
+  return membershipRpc('stillness_set_email_preference', { p_user_id: userId, p_enabled: enabled });
+}
+
+export function claimTrialEmail({ userId, kinds, recipients }) {
+  return membershipRpc('stillness_claim_trial_email', { p_user_id: userId, p_kinds: kinds, p_recipients: recipients });
+}
+
+export function finishTrialEmail({ userId, kind, attempts, outcome }) {
+  return membershipRpc('stillness_finish_trial_email', {
+    p_user_id: userId, p_kind: kind, p_attempts: attempts, p_outcome: outcome,
+  });
+}
+
 export function listMembers({ limit = 100, offset = 0 } = {}) {
   return membershipRpc('stillness_list_members', { p_limit: limit, p_offset: offset });
 }

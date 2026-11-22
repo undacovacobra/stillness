@@ -33,6 +33,7 @@
   let accountRevision = 0;
   let channel;
   let ownerOffset = null;
+  let profileRequested = false;
 
   function memberIsActive(member) {
     return member && member.access_active !== false && plans.has(member.status) &&
@@ -326,6 +327,11 @@
         page === 'login' && visiblePage !== 'login') {
       showPage(page, { focus: navigate || trialAlreadyStarted });
     }
+    if (profileRequested && page === 'studio') {
+      profileRequested = false;
+      try { window.sessionStorage.removeItem('stillness-open-profile'); } catch {}
+      showProfile();
+    }
   }
 
   async function refreshAccount() {
@@ -443,12 +449,14 @@
   async function submitProfile(event, feedbackId) {
     event.preventDefault();
     const fromWelcome = event.currentTarget.id === 'memberWelcomeForm';
-    const { name, goal, customGoal } = dataFrom(event.currentTarget);
+    const { name, goal, customGoal, marketingEmail } = dataFrom(event.currentTarget);
     const selectedGoal = goal === 'custom' ? customGoal.trim() : goal;
     await withButton(event.submitter, feedbackId, async () => {
       if (!name.trim() || !selectedGoal) throw new Error('Enter your name and choose a goal.');
       accountRevision++;
-      const result = await apiRequest(accountPath, { action: 'profile', name: name.trim(), goal: selectedGoal });
+      const details = { action: 'profile', name: name.trim(), goal: selectedGoal };
+      if (fromWelcome && marketingEmail === 'on') details.marketingEmail = true;
+      const result = await apiRequest(accountPath, details);
       const next = result.user ? result : await apiRequest(accountPath);
       applySnapshot(next, { navigate: fromWelcome && !trialCanStart(next.member) });
       if (fromWelcome && visiblePage === 'welcome') {
@@ -456,6 +464,16 @@
         return;
       }
       text(feedbackId, 'Your details are saved.');
+    });
+  }
+
+  async function submitEmailPreference(event) {
+    event.preventDefault();
+    const enabled = byId('memberMarketingEmail').checked;
+    await withButton(event.submitter, 'memberEmailSettingsFeedback', async () => {
+      accountRevision++;
+      applySnapshot(await apiRequest(accountPath, { action: 'email-preference', enabled }));
+      text('memberEmailSettingsFeedback', 'Your email preference is saved.');
     });
   }
 
@@ -489,6 +507,8 @@
     text('memberBillingFeedback', problem);
     text('memberProfileEmail', snapshot.user.email || '');
     text('memberProfileFeedback', '');
+    text('memberEmailSettingsFeedback', '');
+    byId('memberMarketingEmail').checked = snapshot.member?.marketing_email_opt_in === true;
     readGoal('Profile', snapshot.member);
     renderBilling();
     showPage('profile');
@@ -588,6 +608,12 @@
 
   function consumeReturnUrl() {
     const url = new URL(window.location.href);
+    profileRequested = url.searchParams.get('view') === 'profile';
+    try {
+      if (profileRequested) window.sessionStorage.setItem('stillness-open-profile', '1');
+      profileRequested ||= window.sessionStorage.getItem('stillness-open-profile') === '1';
+    } catch {}
+    if (url.searchParams.get('view') === 'profile') url.searchParams.delete('view');
     const code = url.searchParams.get('code');
     const flow = url.searchParams.get('flow');
     const billing = url.searchParams.get('billing');
@@ -685,6 +711,7 @@
     byId('memberResend').addEventListener('click', () => setAuthMode('resend'));
     byId('memberWelcomeForm').addEventListener('submit', event => submitProfile(event, 'memberWelcomeFeedback'));
     byId('memberProfileForm').addEventListener('submit', event => submitProfile(event, 'memberProfileFeedback'));
+    byId('memberEmailSettingsForm').addEventListener('submit', submitEmailPreference);
     byId('memberPasswordForm').addEventListener('submit', submitPassword);
     byId('memberBack').addEventListener('click', () => showPage(recommendedPage()));
     for (const prefix of ['Welcome', 'Profile']) byId(`member${prefix}Goal`).addEventListener('change', () => syncCustomGoal(prefix));

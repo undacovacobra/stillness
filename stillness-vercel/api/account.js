@@ -1,10 +1,12 @@
+import { waitUntil } from '@vercel/functions';
 import {
   accessCookie, refreshCookie, appOrigin, authRequest, clearMemberSession, clearRecovery,
   fail, hasRecovery, isVerified, ownerAccount, pkce, readCookie, requireSameOrigin,
   setMemberSession, setRecovery, writeCookie
 } from '../lib/member-auth.js';
-import { getMember, listMembers, saveProfile, startFreeTrial } from '../lib/member-store.js';
+import { getMember, listMembers, saveProfile, setEmailPreference, startFreeTrial } from '../lib/member-store.js';
 import { trialIdentifiers } from '../lib/member-trial.js';
+import { deliverTrialEmails, emailConfig } from '../lib/trial-email.js';
 
 const signedOut = { user: null };
 const recoveryAccessCookie = 'stillness_recovery_access';
@@ -61,6 +63,7 @@ function publicData(member) {
     user_id, name, goal, status, period_ends_at, trial_used, remaining_seconds,
     topup_seconds, last_used_at, cancel_at_period_end,
     billing_customer: Boolean(stripe_customer_id), has_subscription: Boolean(subscription_id),
+    marketing_email_opt_in: member.marketing_email_opt_in === true,
     trial_eligible: !trial_used && status === 'inactive' && !subscription_id,
     access_active: ['trialing', 'active'].includes(status) && Date.parse(period_ends_at) > Date.now()
   };
@@ -224,7 +227,15 @@ async function beginFreeTrial(req, res, user) {
   if (!ids) return fail(res, 503, 'Your connection could not be verified for a trial. Try again from your normal browser.');
   await getMember(user.id, user.email);
   const claim = await startFreeTrial(user.id, ids);
-  if (claim?.started) return res.status(200).json(await snapshot(user));
+  if (claim?.started) {
+    const config = emailConfig();
+    if (config) {
+      waitUntil(deliverTrialEmails({ config, userId: user.id, kinds: ['started'] }).catch(() => {
+        console.warn('Trial confirmation delivery could not be processed.');
+      }));
+    }
+    return res.status(200).json(await snapshot(user));
+  }
   if (claim?.reason === 'device_limit') {
     return fail(res, 409, 'A free trial was already used in this browser. Sign in to the account you used or choose a membership.', 'trial_device_limit');
   }
@@ -274,6 +285,12 @@ export default async function handler(req, res) {
     if (action === 'password') return await updatePassword(req, res, session, password, body.currentPassword);
     if (session.recovery) return fail(res, 403, 'Choose a new password to finish recovering your account.');
     if (action === 'trial') return await beginFreeTrial(req, res, session.user);
+    if (action === 'email-preference') {
+      if (typeof body.enabled !== 'boolean') return fail(res, 400, 'Choose an email preference.');
+      await getMember(session.user.id, session.user.email);
+      await setEmailPreference(session.user.id, body.enabled);
+      return res.status(200).json(await snapshot(session.user));
+    }
     if (action === 'profile') {
       const name = typeof body.name === 'string' ? body.name.trim() : '';
       const goal = typeof body.goal === 'string' ? body.goal.trim() : '';
@@ -282,6 +299,7 @@ export default async function handler(req, res) {
       }
       await getMember(session.user.id, session.user.email);
       await saveProfile(session.user.id, { name, goal });
+      if (body.marketingEmail === true) await setEmailPreference(session.user.id, true);
       return res.status(200).json(await snapshot(session.user));
     }
     return fail(res, 400, 'Unknown account action.');

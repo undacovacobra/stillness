@@ -80,6 +80,10 @@
           <label for="memberWelcomeCustom" hidden>Your goal
             <input id="memberWelcomeCustom" name="customGoal" type="text" maxlength="80">
           </label>
+          <label class="member-email-option">
+            <input name="marketingEmail" type="checkbox">
+            Email me Stillness offers and updates
+          </label>
           <button class="main-button" type="submit">Continue</button>
         </form>
         <div id="memberWelcomeTrial" class="member-profile-section" hidden>
@@ -137,6 +141,18 @@
             <button class="main-button" type="submit">Save details</button>
           </form>
           <p id="memberProfileFeedback" class="notice" role="status"></p>
+        </section>
+
+        <section class="member-profile-section" aria-labelledby="memberEmailSettingsTitle">
+          <h2 id="memberEmailSettingsTitle">Email preferences</h2>
+          <form id="memberEmailSettingsForm" class="member-form">
+            <label class="member-email-option">
+              <input id="memberMarketingEmail" name="marketingEmail" type="checkbox">
+              Email me Stillness offers and updates
+            </label>
+            <button class="main-button" type="submit">Save preferences</button>
+          </form>
+          <p id="memberEmailSettingsFeedback" class="notice" role="status"></p>
         </section>
 
         <details class="member-profile-section">

@@ -30,3 +30,20 @@ On the membership Supabase project, add `https://stillness-members.vercel.app/?f
 Google returns to Stillness through the same browser that initiated sign-in. Existing membership entitlement is looked up by the verified Supabase user ID. Google uses the same trial eligibility as email sign-in.
 
 [Supabase Google setup](https://supabase.com/docs/guides/auth/social-sign-in/auth-google)
+
+## Trial email
+
+Apply the trial email migration to the membership database. Then verify a sending domain in Resend and set these variables in the membership Vercel project's production environment.
+
+| Variable | Value |
+| --- | --- |
+| `RESEND_API_KEY` | Server-only Resend key scoped to sending from the verified domain. |
+| `STILLNESS_EMAIL_FROM` | A branded sender on the verified domain, for example `Stillness <hello@your-domain.com>`. |
+| `STILLNESS_EMAIL_REPLY_TO` | A monitored reply address for beta feedback and support. |
+| `STILLNESS_EMAIL_ORIGIN` | The HTTPS origin for the membership app. |
+| `CRON_SECRET` | A server-only random secret of at least 32 characters. It also verifies unsubscribe links. |
+| `STILLNESS_EMAIL_MODE` | Set to `beta` for selected testers, `launch` for production, or leave unset to disable sending. |
+| `STILLNESS_EMAIL_BETA_RECIPIENTS` | Comma-separated verified email addresses that can receive beta messages. Required in beta mode. |
+| `STILLNESS_EMAIL_POSTAL_ADDRESS` | Business mailing address for marketing emails. Subscription offers also require live Stripe checkout to be enabled. |
+
+Use Resend's SMTP credentials in Supabase Auth for verification and password reset delivery. Test signup, trial start, expiry, and marketing unsubscribe with a tester address before opening access. The daily Vercel Cron job handles scheduled notices, and trial activation kicks off its confirmation in the background. The app queues email for newly verified members and newly started trials after the migration. The sender respects verified member status, the mailing preference, and the selected beta audience.
