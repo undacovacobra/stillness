@@ -4,14 +4,42 @@ import {
   fail, hasRecovery, isVerified, ownerAccount, pkce, readCookie, requireSameOrigin,
   setMemberSession, setRecovery, writeCookie
 } from '../lib/member-auth.js';
-import { getMember, listMembers, saveProfile, setEmailPreference, startFreeTrial } from '../lib/member-store.js';
+import { getAdminEmail, getMember, listMembers, saveEmailTemplate, saveProfile, setEmailPreference, startFreeTrial } from '../lib/member-store.js';
 import { trialIdentifiers } from '../lib/member-trial.js';
 import { deliverTrialEmails, emailConfig } from '../lib/trial-email.js';
+import { knownEmailTemplate, listEmailTemplates, previewEmailTemplate, validateEmailTemplate } from '../lib/trial-email-templates.js';
 
 const signedOut = { user: null };
 const recoveryAccessCookie = 'stillness_recovery_access';
 const temporary = 'Account service is temporarily unavailable. Please try again.';
 const oauthProviders = ['google'];
+const adminEmailActions = ['admin-email-preview', 'admin-email-save', 'admin-email-reset'];
+
+async function adminEmailOverview(res) {
+  const { templates, activity } = await getAdminEmail();
+  const config = emailConfig();
+  return res.status(200).json({
+    templates: listEmailTemplates(templates), activity,
+    sending: { mode: config?.mode || 'off', offers: config?.offersEnabled === true },
+  });
+}
+
+async function editAdminEmail(req, res, user, body) {
+  const { action, kind } = body;
+  if (!ownerAccount(user)) return fail(res, 403, 'Owner access only.');
+  if (!knownEmailTemplate(kind)) return fail(res, 400, 'Choose an email template.');
+  if (action === 'admin-email-reset') {
+    await saveEmailTemplate(user.id, { kind });
+    return await adminEmailOverview(res);
+  }
+  const template = validateEmailTemplate({ kind, subject: body.subject, body: body.body });
+  if (!template) return fail(res, 400, 'Enter a subject and message using the listed placeholders.');
+  if (action === 'admin-email-preview') {
+    return res.status(200).json({ preview: previewEmailTemplate(template, appOrigin(req)) });
+  }
+  await saveEmailTemplate(user.id, template);
+  return await adminEmailOverview(res);
+}
 
 async function availableProviders() {
   const settings = await authRequest('/settings');
@@ -258,9 +286,14 @@ export default async function handler(req, res) {
       const session = await activeSession(req, res, { allowRefresh: true });
       if (req.query?.view === 'admin') {
         if (!session || session.recovery || !ownerAccount(session.user)) return fail(res, 403, 'Owner access only.');
+        const search = typeof req.query.search === 'string' ? req.query.search.trim().slice(0, 254) : '';
         const offset = Math.min(100_000, Math.max(0, Math.floor(Number(req.query?.offset) || 0)));
-        const members = await listMembers({ limit: 100, offset });
-        return res.status(200).json({ members: members.map(member => ({ ...publicData(member), email: member.email })), nextOffset: members.length === 100 ? offset + 100 : null });
+        const members = await listMembers({ limit: 100, offset, search });
+        return res.status(200).json({ members, nextOffset: members.length === 100 ? offset + 100 : null });
+      }
+      if (req.query?.view === 'admin-email') {
+        if (!session || session.recovery || !ownerAccount(session.user)) return fail(res, 403, 'Owner access only.');
+        return await adminEmailOverview(res);
       }
       if (!session) return res.status(200).json(signedOut);
       return res.status(200).json(session.recovery ? recoverySnapshot(session.user) : await snapshot(session.user));
@@ -284,6 +317,7 @@ export default async function handler(req, res) {
     if (!session) return fail(res, 401, 'Sign in to continue.');
     if (action === 'password') return await updatePassword(req, res, session, password, body.currentPassword);
     if (session.recovery) return fail(res, 403, 'Choose a new password to finish recovering your account.');
+    if (adminEmailActions.includes(action)) return await editAdminEmail(req, res, session.user, body);
     if (action === 'trial') return await beginFreeTrial(req, res, session.user);
     if (action === 'email-preference') {
       if (typeof body.enabled !== 'boolean') return fail(res, 400, 'Choose an email preference.');

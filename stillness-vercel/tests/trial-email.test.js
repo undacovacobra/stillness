@@ -64,7 +64,7 @@ test('dispatch passes the audience to the database, uses an idempotency key and 
   let claims = 0;
   const result = await deliverTrialEmails({ config, userId: id, kinds: ['reminder'], store: {
     async claimTrialEmail(input) {
-      assert.deepEqual(input, { userId: id, kinds: ['reminder'], recipients: ['tester@example.com'] });
+      assert.deepEqual(input, { userId: id, kinds: ['reminder'], recipients: ['tester@example.com'], mode: 'beta' });
       return claims++ === 0 ? job : null;
     },
     async finishTrialEmail(input) { sent.push(input); },

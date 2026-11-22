@@ -44,8 +44,10 @@ export function setEmailPreference(userId, enabled) {
   return membershipRpc('stillness_set_email_preference', { p_user_id: userId, p_enabled: enabled });
 }
 
-export function claimTrialEmail({ userId, kinds, recipients }) {
-  return membershipRpc('stillness_claim_trial_email', { p_user_id: userId, p_kinds: kinds, p_recipients: recipients });
+export function claimTrialEmail({ userId, kinds, recipients, mode }) {
+  return membershipRpc('stillness_claim_trial_email', {
+    p_user_id: userId, p_kinds: kinds, p_recipients: recipients, p_mode: mode,
+  });
 }
 
 export function finishTrialEmail({ userId, kind, attempts, outcome }) {
@@ -54,8 +56,16 @@ export function finishTrialEmail({ userId, kind, attempts, outcome }) {
   });
 }
 
-export function listMembers({ limit = 100, offset = 0 } = {}) {
-  return membershipRpc('stillness_list_members', { p_limit: limit, p_offset: offset });
+export function listMembers({ limit = 100, offset = 0, search = '' } = {}) {
+  return membershipRpc('stillness_admin_members', { p_limit: limit, p_offset: offset, p_search: search });
+}
+
+export function getAdminEmail() {
+  return membershipRpc('stillness_admin_email', {});
+}
+
+export function saveEmailTemplate(ownerId, { kind, subject = null, body = null }) {
+  return membershipRpc('stillness_save_email_template', { p_owner: ownerId, p_kind: kind, p_subject: subject, p_body: body });
 }
 
 export function setStripeCustomer(userId, stripeCustomerId) {

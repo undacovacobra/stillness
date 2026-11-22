@@ -33,6 +33,9 @@
   let accountRevision = 0;
   let channel;
   let ownerOffset = null;
+  let ownerSearch = '';
+  let ownerMemberLoad = 0;
+  let ownerTemplates = [];
   let profileRequested = false;
 
   function memberIsActive(member) {
@@ -173,6 +176,7 @@
     reveal('membershipStudioProfile', !kokoro && Boolean(problem) && Boolean(snapshot.user));
     reveal('membershipScriptProfile', !kokoro && Boolean(problem) && Boolean(snapshot.user));
     reveal('memberAdminButton', snapshot.owner === true);
+    reveal('memberWelcomeAdminButton', snapshot.owner === true);
   }
 
   function renderBilling() {
@@ -321,7 +325,13 @@
     refreshEntitlement();
     const page = recommendedPage();
     const ownerAccessRevoked = visiblePage === 'admin' && !snapshot.owner;
-    if (ownerAccessRevoked) byId('memberAdminList').replaceChildren();
+    if (ownerAccessRevoked) {
+      byId('memberAdminList').replaceChildren();
+      byId('memberAdminActivityList').replaceChildren();
+      byId('memberAdminEmailForm').reset();
+      reveal('memberAdminPreviewPanel', false);
+      ownerTemplates = [];
+    }
     const trialAlreadyStarted = visiblePage === 'welcome' && page === 'studio' && !trialCanStart(snapshot.member);
     if (navigate || visiblePage === 'loading' || ownerAccessRevoked || trialAlreadyStarted ||
         page === 'login' && visiblePage !== 'login') {
@@ -565,22 +575,54 @@
 
   async function renderOwner() {
     if (!snapshot.owner) return;
-    ownerOffset = 0;
-    byId('memberAdminList').replaceChildren();
     showPage('admin');
-    await loadOwnerMembers();
+    await showAdminSection('users');
   }
 
-  async function loadOwnerMembers() {
+  async function showAdminSection(section) {
+    if (!snapshot.owner) return;
+    const emails = section === 'email';
+    byId('memberAdminUsersTab').setAttribute('aria-pressed', String(!emails));
+    byId('memberAdminEmailTab').setAttribute('aria-pressed', String(emails));
+    reveal('memberAdminUsers', !emails);
+    reveal('memberAdminEmail', emails);
+    if (!emails) {
+      await searchOwnerMembers();
+      return;
+    }
+    text('memberAdminEmailFeedback', 'Loading emails…');
+    reveal('memberAdminEmailForm', false);
+    reveal('memberAdminActivity', false);
+    reveal('memberAdminPreviewPanel', false);
+    try {
+      const result = await apiRequest(accountPath + '?view=admin-email');
+      if (!snapshot.owner || visiblePage !== 'admin') return;
+      renderOwnerEmails(result);
+      text('memberAdminEmailFeedback', '');
+    } catch (error) {
+      text('memberAdminEmailFeedback', error.message);
+    }
+  }
+
+  async function searchOwnerMembers(event) {
+    event?.preventDefault();
+    ownerOffset = 0;
+    ownerSearch = byId('memberAdminSearch').value.trim();
+    byId('memberAdminList').replaceChildren();
+    await loadOwnerMembers(true);
+  }
+
+  async function loadOwnerMembers(replace = false) {
     const next = byId('memberAdminMore');
-    if (!snapshot.owner || ownerOffset === null || next.disabled) return;
+    if (!snapshot.owner || ownerOffset === null || (next.disabled && !replace)) return;
+    const loadId = ++ownerMemberLoad;
     const list = byId('memberAdminList');
     next.disabled = true;
     reveal('memberAdminMore', false);
     text('memberAdminFeedback', 'Loading members…');
     try {
-      const { members, nextOffset } = await apiRequest(`${accountPath}?view=admin&offset=${ownerOffset}`);
-      if (!snapshot.owner || visiblePage !== 'admin') return;
+      const { members, nextOffset } = await apiRequest(`${accountPath}?view=admin&offset=${ownerOffset}&search=${encodeURIComponent(ownerSearch)}`);
+      if (!snapshot.owner || visiblePage !== 'admin' || loadId !== ownerMemberLoad) return;
       if (!Array.isArray(members)) throw new Error('The member list is temporarily unavailable.');
       ownerOffset = Number.isSafeInteger(nextOffset) ? nextOffset : null;
       const count = list.childElementCount + members.length;
@@ -594,15 +636,93 @@
         email.textContent = member.email || '';
         const usage = document.createElement('p');
         const lastUsed = readableDate(member.last_used_at);
-        usage.textContent = `${describePlan(member)} · ${readableTime(remainingSeconds(member))} left${lastUsed ? ` · Last used ${lastUsed}` : ''}`;
-        row.append(name, email, usage);
+        const ending = memberIsActive(member) ? readableDate(member.period_ends_at) : '';
+        usage.textContent = [describePlan(member), readableTime(remainingSeconds(member)) + ' left',
+          readableTime(member.voice_seconds_used) + ' used', ending && 'Access through ' + ending].filter(Boolean).join(' · ');
+        const account = document.createElement('p');
+        account.textContent = ['Joined ' + readableDate(member.created_at), lastUsed && 'Last used ' + lastUsed,
+          member.marketing_email_opt_in ? 'Marketing emails on' : 'Marketing emails off'].filter(Boolean).join(' · ');
+        row.append(name, email, usage, account);
         list.append(row);
       }
     } catch (error) {
-      text('memberAdminFeedback', error.message);
+      if (loadId === ownerMemberLoad) text('memberAdminFeedback', error.message);
     } finally {
-      next.disabled = false;
-      reveal('memberAdminMore', ownerOffset !== null && snapshot.owner === true && visiblePage === 'admin');
+      if (loadId === ownerMemberLoad) {
+        next.disabled = false;
+        reveal('memberAdminMore', ownerOffset !== null && snapshot.owner === true && visiblePage === 'admin');
+      }
+    }
+  }
+
+  function renderOwnerTemplate() {
+    const template = ownerTemplates.find(item => item.kind === byId('memberAdminTemplate').value);
+    if (!template) return;
+    byId('memberAdminEmailSubject').value = template.subject;
+    byId('memberAdminEmailBody').value = template.body;
+    text('memberAdminTemplateWhen', template.when);
+    text('memberAdminEmailFieldsHelp', 'Available placeholders ' + template.variables.map(key => '{{' + key + '}}').join(', ') +
+      '. Stillness adds the greeting, signature, and any required unsubscribe information.');
+    byId('memberAdminEmailReset').disabled = !template.custom;
+    reveal('memberAdminPreviewPanel', false);
+  }
+
+  function renderOwnerEmails({ templates, activity, sending }, selected) {
+    ownerTemplates = templates;
+    const select = byId('memberAdminTemplate');
+    select.replaceChildren(...templates.map(template => {
+      const option = document.createElement('option');
+      option.value = template.kind;
+      option.textContent = template.label;
+      return option;
+    }));
+    if (selected) select.value = selected;
+    const sendingStatus = sending.mode === 'off' ? 'Sending is off. A verified sender is required.'
+      : sending.mode === 'beta' ? 'Sending is limited to invited testers.'
+        : sending.offers ? 'Sending is on, including subscription follow-ups.' : 'Trial emails are on. Subscription follow-ups are off.';
+    text('memberAdminEmailStatus', sendingStatus);
+    renderOwnerTemplate();
+    reveal('memberAdminEmailForm', true);
+
+    const list = byId('memberAdminActivityList');
+    list.replaceChildren();
+    const labels = { accepted: 'Accepted by email provider', failed: 'Failed', unconfirmed: 'Send unconfirmed',
+      processing: 'Processing', skipped: 'Skipped', expired: 'Expired', queued: 'Queued', scheduled: 'Scheduled' };
+    for (const job of activity) {
+      const label = templates.find(template => template.kind === job.kind)?.label || job.kind;
+      const row = document.createElement('p');
+      row.className = 'admin-activity-row';
+      const date = readableDate(job.attempted_at || job.due_at);
+      row.textContent = [label, job.email, labels[job.status] || job.status, date].join(' · ');
+      list.append(row);
+    }
+    if (!activity.length) list.textContent = 'No trial email activity yet.';
+    reveal('memberAdminActivity', true);
+  }
+
+  async function editOwnerEmail(action) {
+    const fields = byId('memberAdminEmailFields');
+    if (!snapshot.owner || fields.disabled) return;
+    const kind = byId('memberAdminTemplate').value;
+    const subject = byId('memberAdminEmailSubject').value;
+    const body = byId('memberAdminEmailBody').value;
+    fields.disabled = true;
+    text('memberAdminEmailFeedback', '');
+    try {
+      const result = await apiRequest(accountPath, { action: 'admin-email-' + action, kind, subject, body });
+      if (!snapshot.owner || visiblePage !== 'admin') return;
+      if (action === 'preview') {
+        text('memberAdminPreviewSubject', result.preview.subject);
+        text('memberAdminPreviewText', result.preview.text);
+        reveal('memberAdminPreviewPanel', true);
+        return;
+      }
+      renderOwnerEmails(result, kind);
+      text('memberAdminEmailFeedback', action === 'reset' ? 'Default message restored.' : 'Email template saved.');
+    } catch (error) {
+      text('memberAdminEmailFeedback', error.message);
+    } finally {
+      fields.disabled = false;
     }
   }
 
@@ -727,7 +847,17 @@
     });
     for (const button of document.querySelectorAll('[data-member-profile]')) button.addEventListener('click', () => showProfile());
     byId('memberAdminButton').addEventListener('click', renderOwner);
-    byId('memberAdminMore').addEventListener('click', loadOwnerMembers);
+    byId('memberWelcomeAdminButton').addEventListener('click', renderOwner);
+    byId('memberAdminMore').addEventListener('click', () => loadOwnerMembers());
+    byId('memberAdminSearchForm').addEventListener('submit', searchOwnerMembers);
+    byId('memberAdminUsersTab').addEventListener('click', () => showAdminSection('users'));
+    byId('memberAdminEmailTab').addEventListener('click', () => showAdminSection('email'));
+    byId('memberAdminTemplate').addEventListener('change', renderOwnerTemplate);
+    byId('memberAdminEmailForm').addEventListener('submit', event => {
+      event.preventDefault();
+      void editOwnerEmail(event.submitter?.value === 'preview' ? 'preview' : 'save');
+    });
+    byId('memberAdminEmailReset').addEventListener('click', () => editOwnerEmail('reset'));
     void loadMembership(consumeReturnUrl());
     void loadOAuthOptions();
   }

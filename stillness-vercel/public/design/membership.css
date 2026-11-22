@@ -91,6 +91,35 @@ body[data-view="player"] #memberNavigation .member-entry { display: none; }
 .member-admin-row { border-top: 1px solid var(--rule); padding: 16px 0; }
 .member-admin-row h2 { font-size: 22px; margin-bottom: 4px; }
 .member-admin-row p { color: var(--soft); overflow-wrap: anywhere; }
+.admin-navigation { margin: 16px 0 22px; border-bottom: 1px solid var(--rule); }
+.admin-navigation button { min-height: 44px; border-bottom: 2px solid transparent; }
+.admin-navigation button[aria-pressed="true"] { border-color: var(--gold); color: var(--ink); }
+.admin-search { display: flex; align-items: end; margin-top: 0; }
+.admin-search label { flex: 1; min-width: 0; }
+.admin-search button { min-height: 44px; }
+.admin-email-editor { max-width: 100%; }
+.admin-email-editor fieldset { min-width: 0; border: 0; padding: 0; display: grid; gap: 12px; }
+.admin-email-editor legend { padding: 0 0 12px; color: var(--ink); font-size: 1.1rem; }
+.admin-email-editor textarea {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: #2a1a14e3;
+  color: var(--ink);
+  padding: 12px;
+  line-height: 1.55;
+  font: inherit;
+  resize: vertical;
+}
+.admin-email-editor textarea:focus-visible { outline: 2px solid var(--gold); outline-offset: 4px; }
+.admin-preview-subject { font-weight: 650; margin-block: 12px; overflow-wrap: anywhere; }
+.admin-email-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--soft);
+  font: inherit;
+  line-height: 1.6;
+}
+.admin-activity-row { border-bottom: 1px solid var(--rule); padding: 12px 0; color: var(--soft); overflow-wrap: anywhere; }
 
 @media (max-width: 680px) {
   .member-page { padding-top: 34px; }

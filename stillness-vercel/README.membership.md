@@ -47,3 +47,5 @@ Apply the trial email migration to the membership database. Then verify a sendin
 | `STILLNESS_EMAIL_POSTAL_ADDRESS` | Business mailing address for marketing emails. Subscription offers also require live Stripe checkout to be enabled. |
 
 Use Resend's SMTP credentials in Supabase Auth for verification and password reset delivery. Test signup, trial start, expiry, and marketing unsubscribe with a tester address before opening access. The daily Vercel Cron job handles scheduled notices, and trial activation kicks off its confirmation in the background. The app queues email for newly verified members and newly started trials after the migration. The sender respects verified member status, the mailing preference, and the selected beta audience.
+
+Set `MEMBER_ADMIN_EMAILS` to the verified owner addresses. An owner can open **Admin** in the app to search members, view usage and membership status, edit and preview Stillness trial email templates, and check recent send attempts. A preview never sends mail. Restoring a default uses the copy shipped with the app. Account verification and password reset templates are managed in Supabase Auth.

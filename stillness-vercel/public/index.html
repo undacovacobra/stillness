@@ -18,7 +18,7 @@
       <button id="tabLibraryBtn" class="nav-action" type="button">Library</button>
       <button id="endSessionBtn" class="nav-action hidden" type="button">End session</button>
       <button class="nav-action member-entry" data-member-profile type="button">Profile</button>
-      <button id="memberAdminButton" class="nav-action member-entry" type="button" hidden>Members</button>
+      <button id="memberAdminButton" class="nav-action member-entry" type="button" hidden>Admin</button>
     </nav>
     <button id="memberBack" type="button" class="nav-action" hidden>Back to Stillness</button>
   </header>
@@ -95,6 +95,7 @@
           </div>
         </div>
         <p id="memberWelcomeFeedback" class="notice" role="status"></p>
+        <button id="memberWelcomeAdminButton" class="text-action member-inline" type="button" hidden>Admin</button>
         <button class="text-action member-inline" data-member-logout type="button">Sign out</button>
       </div>
 
@@ -174,10 +175,56 @@
       </div>
 
       <div id="memberAdmin" hidden>
-        <h1 id="memberAdminTitle" tabindex="-1">Members</h1>
-        <p id="memberAdminFeedback" class="member-lede" role="status"></p>
-        <div id="memberAdminList"></div>
-        <button id="memberAdminMore" class="text-action member-inline" type="button" hidden>Load more members</button>
+        <h1 id="memberAdminTitle" tabindex="-1">Admin</h1>
+        <div class="member-actions admin-navigation" aria-label="Admin sections">
+          <button id="memberAdminUsersTab" type="button" class="text-action" aria-controls="memberAdminUsers" aria-pressed="true">Members</button>
+          <button id="memberAdminEmailTab" type="button" class="text-action" aria-controls="memberAdminEmail" aria-pressed="false">Emails</button>
+        </div>
+        <section id="memberAdminUsers" aria-label="Members">
+          <form id="memberAdminSearchForm" class="member-form admin-search">
+            <label for="memberAdminSearch">Find a member
+              <input id="memberAdminSearch" type="search" maxlength="254" placeholder="Name or email">
+            </label>
+            <button class="text-action" type="submit">Search</button>
+          </form>
+          <p id="memberAdminFeedback" class="member-lede" role="status"></p>
+          <div id="memberAdminList"></div>
+          <button id="memberAdminMore" class="text-action member-inline" type="button" hidden>Load more members</button>
+        </section>
+        <section id="memberAdminEmail" aria-label="Emails" hidden>
+          <p id="memberAdminEmailStatus" class="member-detail" role="status"></p>
+          <p id="memberAdminEmailFeedback" class="notice" role="status"></p>
+          <form id="memberAdminEmailForm" class="member-form admin-email-editor" hidden>
+            <fieldset id="memberAdminEmailFields">
+              <legend>Email template</legend>
+              <label for="memberAdminTemplate">Message
+                <select id="memberAdminTemplate"></select>
+              </label>
+              <p id="memberAdminTemplateWhen" class="member-detail"></p>
+              <label for="memberAdminEmailSubject">Subject
+                <input id="memberAdminEmailSubject" required maxlength="150" type="text">
+              </label>
+              <label for="memberAdminEmailBody">Message body
+                <textarea id="memberAdminEmailBody" required maxlength="8000" rows="9" aria-describedby="memberAdminEmailFieldsHelp"></textarea>
+              </label>
+              <p id="memberAdminEmailFieldsHelp" class="member-detail"></p>
+              <div class="member-actions">
+                <button id="memberAdminEmailSave" class="main-button" type="submit" value="save">Save changes</button>
+                <button id="memberAdminEmailPreview" class="text-action" type="submit" value="preview">Preview</button>
+                <button id="memberAdminEmailReset" class="text-action" type="button">Restore default</button>
+              </div>
+            </fieldset>
+          </form>
+          <section id="memberAdminPreviewPanel" class="member-profile-section" aria-labelledby="memberAdminPreviewTitle" hidden>
+            <h2 id="memberAdminPreviewTitle">Preview</h2>
+            <p id="memberAdminPreviewSubject" class="admin-preview-subject"></p>
+            <pre id="memberAdminPreviewText" class="admin-email-preview"></pre>
+          </section>
+          <section class="member-profile-section" id="memberAdminActivity" aria-labelledby="memberAdminActivityTitle" hidden>
+            <h2 id="memberAdminActivityTitle">Recent activity</h2>
+            <div id="memberAdminActivityList"></div>
+          </section>
+        </section>
       </div>
     </section>
     <div id="memberStudio" hidden>
