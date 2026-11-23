@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://trystillness.vercel.app/sitemap.xml

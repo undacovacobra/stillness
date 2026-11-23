@@ -1,0 +1,20 @@
+.watch-page {
+  background: linear-gradient(180deg, #38271ddb, #231811 600px), url('./dusk-water.jpg') center top / 100% auto no-repeat;
+}
+.watch-page .site-header { position: static; }
+.watch-main { max-width: 960px; padding-top: clamp(35px, 7vw, 83px); }
+.watch-main h1 { max-width: 760px; font-size: clamp(43px, 6.2vw, 80px); line-height: .99; text-wrap: initial; }
+.watch-intro { color: var(--muted); font-size: clamp(17px, 2vw, 19px); margin-top: 15px; max-width: 660px; }
+.watch-player { aspect-ratio: 16 / 9; overflow: hidden; background: #21150f; margin-top: 25px; border: 1px solid var(--line); }
+.watch-player iframe { width: 100%; height: 100%; border: 0; display: block; }
+.watch-external { display: inline-block; margin-top: 12px; font-size: 14px; color: var(--peach); }
+.watch-trial { margin-top: clamp(38px, 8vw, 75px); }
+.watch-trial h2 { font-size: clamp(36px, 4vw, 54px); }
+.watch-trial p { max-width: 490px; }
+.watch-transcript { margin-top: 34px; border-block: 1px solid var(--line); padding-block: 16px; }
+.watch-transcript summary { cursor: pointer; width: fit-content; color: var(--peach); }
+.watch-transcript p { margin-top: 13px; color: var(--muted); max-width: 690px; }
+@media (max-width: 680px) {
+  .watch-page { background-size: auto, auto 420px; }
+  .watch-player { margin-top: 19px; }
+}
