@@ -623,6 +623,31 @@
 
   async function renderOwner() {
     if (!snapshot.owner) return;
+    if (!byId('memberAdminAlerts')) {
+      byId('memberAdminEmailTab').insertAdjacentHTML('afterend',
+        '<button id="memberAdminAlertsTab" type="button" class="text-action" aria-controls="memberAdminAlerts" aria-pressed="false">Alerts</button>');
+      byId('memberAdminEmail').insertAdjacentHTML('beforebegin', `
+        <section id="memberAdminAlerts" aria-label="Owner alerts" hidden>
+          <p id="memberAdminAlertsSummary" class="member-detail"></p>
+          <p id="memberAdminAlertsFeedback" class="notice" role="status"></p>
+          <form id="memberAdminCreditForm" class="member-form">
+            <label>Available Gemini credits (USD)
+              <input id="memberAdminCreditBalance" type="number" min="0" max="10000" step="0.01" required>
+            </label>
+            <p class="member-detail">Enter the balance shown in <a href="https://aistudio.google.com/billing" target="_blank" rel="noopener noreferrer">Google AI Studio</a> after a top-up. Stillness estimates the balance between updates.</p>
+            <button type="submit" class="main-button">Save balance</button>
+          </form>
+          <button id="memberAdminAlertTest" class="text-action member-inline" type="button">Send test email</button>
+        </section>
+      `);
+      byId('memberAdminAlertsTab').addEventListener('click', () => showAdminSection('alerts'));
+      byId('memberAdminCreditForm').addEventListener('submit', event => {
+        event.preventDefault();
+        const dollars = byId('memberAdminCreditBalance').valueAsNumber;
+        ownerAlertAction({ action: 'admin-credit-save', cents: Math.round(dollars * 100) });
+      });
+      byId('memberAdminAlertTest').addEventListener('click', () => ownerAlertAction({ action: 'admin-alert-test' }));
+    }
     showPage('admin');
     await showAdminSection('users');
   }
@@ -630,11 +655,19 @@
   async function showAdminSection(section) {
     if (!snapshot.owner) return;
     const emails = section === 'email';
-    byId('memberAdminUsersTab').setAttribute('aria-pressed', String(!emails));
+    const users = section === 'users';
+    const alerts = section === 'alerts';
+    byId('memberAdminUsersTab').setAttribute('aria-pressed', String(users));
     byId('memberAdminEmailTab').setAttribute('aria-pressed', String(emails));
-    reveal('memberAdminUsers', !emails);
+    byId('memberAdminAlertsTab').setAttribute('aria-pressed', String(alerts));
+    reveal('memberAdminUsers', users);
     reveal('memberAdminEmail', emails);
-    if (!emails) {
+    reveal('memberAdminAlerts', alerts);
+    if (alerts) {
+      await ownerAlertAction();
+      return;
+    }
+    if (users) {
       await searchOwnerMembers();
       return;
     }
@@ -649,6 +682,38 @@
       text('memberAdminEmailFeedback', '');
     } catch (error) {
       text('memberAdminEmailFeedback', error.message);
+    }
+  }
+
+  async function ownerAlertAction(body) {
+    if (!snapshot.owner) return;
+    const form = byId('memberAdminCreditForm');
+    const test = byId('memberAdminAlertTest');
+    const input = byId('memberAdminCreditBalance');
+    const submit = form.querySelector('button[type="submit"]');
+    if (submit.disabled) return;
+    submit.disabled = true;
+    test.disabled = true;
+    text('memberAdminAlertsFeedback', body ? 'Working…' : 'Loading alerts…');
+    try {
+      const result = body
+        ? await apiRequest(accountPath, body)
+        : await apiRequest(accountPath + '?view=admin-alerts');
+      if (!snapshot.owner || visiblePage !== 'admin') return;
+      if (result.credit) {
+        const credit = result.credit;
+        const money = cents => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
+        const estimate = credit.available === null ? 'Enter your Google AI Studio balance to enable early warnings.'
+          : `Estimated balance ${money(credit.available)}. Credit target ${money(credit.target)} for ${credit.members} active accounts.`;
+        input.value = credit.recorded === null ? '' : (credit.recorded / 100).toFixed(2);
+        text('memberAdminAlertsSummary', [estimate, result.email ? 'Alerts go to ' + result.email + '.' : 'Email delivery needs setup.'].join(' '));
+      }
+      text('memberAdminAlertsFeedback', result.message || (body ? 'Balance saved.' : ''));
+    } catch (error) {
+      text('memberAdminAlertsFeedback', error.message);
+    } finally {
+      submit.disabled = false;
+      test.disabled = false;
     }
   }
 

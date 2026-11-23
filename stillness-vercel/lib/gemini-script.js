@@ -43,6 +43,7 @@ export default async function handler(req, res) {
           },
           body: JSON.stringify(payload)
         });
+        if (resp.status === 402) return res.status(503).json({ error: unavailable, code: 'GEMINI_PREPAY_DEPLETED' });
         if (resp.status === 429) {
           return await respondToProviderRateLimit(resp, res, { model, service: 'script' });
         }

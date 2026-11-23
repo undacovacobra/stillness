@@ -72,6 +72,26 @@ export function getAdminEmail() {
   return membershipRpc('stillness_admin_email', {});
 }
 
+export function queueOwnerAlert({ id, kind, details = {} }) {
+  return membershipRpc('stillness_queue_owner_alert', { p_id: id, p_kind: kind, p_details: details });
+}
+
+export function claimOwnerAlert(id) {
+  return membershipRpc('stillness_claim_owner_alert', { p_id: id });
+}
+
+export function finishOwnerAlert({ id, attempts, outcome }) {
+  return membershipRpc('stillness_finish_owner_alert', { p_id: id, p_attempts: attempts, p_outcome: outcome });
+}
+
+export function ownerCreditStatus() {
+  return membershipRpc('stillness_owner_credit_status', {});
+}
+
+export function saveCreditBalance(cents) {
+  return membershipRpc('stillness_save_credit_balance', { p_cents: cents });
+}
+
 export function saveEmailTemplate(ownerId, { kind, subject = null, body = null }) {
   return membershipRpc('stillness_save_email_template', { p_owner: ownerId, p_kind: kind, p_subject: subject, p_body: body });
 }

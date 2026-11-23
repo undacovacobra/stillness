@@ -1,19 +1,46 @@
 import { waitUntil } from '@vercel/functions';
+import { randomUUID } from 'node:crypto';
 import {
   accessCookie, refreshCookie, appOrigin, authRequest, clearMemberSession, clearRecovery,
   fail, hasRecovery, isVerified, ownerAccount, pkce, readCookie, requireSameOrigin,
   setMemberSession, setRecovery, writeCookie
 } from '../lib/member-auth.js';
-import { getAdminEmail, getMember, listMembers, recordMarketingMilestone, saveEmailTemplate, saveProfile, setEmailPreference, startFreeTrial } from '../lib/member-store.js';
+import { getAdminEmail, getMember, listMembers, queueOwnerAlert, recordMarketingMilestone, saveCreditBalance, saveEmailTemplate, saveProfile, setEmailPreference, startFreeTrial } from '../lib/member-store.js';
 import { trialIdentifiers } from '../lib/member-trial.js';
 import { deliverTrialEmails, emailConfig } from '../lib/trial-email.js';
 import { knownEmailTemplate, listEmailTemplates, previewEmailTemplate, validateEmailTemplate } from '../lib/trial-email-templates.js';
+import { backgroundOwnerAlert, checkOwnerCredit, deliverOwnerAlerts, ownerAlertConfig } from '../lib/owner-alerts.js';
 
 const signedOut = { user: null };
 const recoveryAccessCookie = 'stillness_recovery_access';
 const temporary = 'Account service is temporarily unavailable. Please try again.';
 const oauthProviders = ['google'];
 const adminEmailActions = ['admin-email-preview', 'admin-email-save', 'admin-email-reset'];
+
+async function ownerAlerts(res, user, action, cents) {
+  if (!ownerAccount(user)) return fail(res, 403, 'Owner access only.');
+  const config = ownerAlertConfig();
+  if (action === 'admin-alert-test') {
+    if (!config) return fail(res, 503, 'Owner email delivery needs setup.');
+    const id = 'test/' + randomUUID();
+    await queueOwnerAlert({ id, kind: 'test' });
+    const result = await deliverOwnerAlerts({ config, id });
+    if (!result.accepted) return fail(res, 503, 'The email provider did not accept the test. Try again shortly.');
+    return res.status(200).json({ message: 'Test email accepted for delivery.' });
+  }
+  if (action === 'admin-credit-save') {
+    if (!Number.isSafeInteger(cents) || cents < 0 || cents > 1_000_000) {
+      return fail(res, 400, 'Enter a USD balance from $0 to $10,000.');
+    }
+    await saveCreditBalance(cents);
+  }
+  const now = new Date();
+  const credit = await checkOwnerCredit({ config: action === 'admin-credit-save' ? config : null, now });
+  if (action === 'admin-credit-save' && config && credit.shortfall) {
+    backgroundOwnerAlert(() => deliverOwnerAlerts({ config, id: 'credit/' + now.toISOString().slice(0, 10) }));
+  }
+  return res.status(200).json({ credit, email: config?.to || null });
+}
 
 async function adminEmailOverview(res) {
   const { templates, activity } = await getAdminEmail();
@@ -256,6 +283,15 @@ async function beginFreeTrial(req, res, user) {
   await getMember(user.id, user.email);
   const claim = await startFreeTrial(user.id, ids);
   if (claim?.started) {
+    const ownerConfig = ownerAlertConfig();
+    if (ownerConfig) {
+      backgroundOwnerAlert(async () => {
+        await deliverOwnerAlerts({ config: ownerConfig, id: 'trial/' + user.id });
+        const now = new Date();
+        const credit = await checkOwnerCredit({ config: ownerConfig, now });
+        if (credit.shortfall) await deliverOwnerAlerts({ config: ownerConfig, id: 'credit/' + now.toISOString().slice(0, 10) });
+      });
+    }
     const config = emailConfig();
     if (config) {
       waitUntil(deliverTrialEmails({ config, userId: user.id, kinds: ['started'] }).catch(() => {
@@ -295,6 +331,10 @@ export default async function handler(req, res) {
         if (!session || session.recovery || !ownerAccount(session.user)) return fail(res, 403, 'Owner access only.');
         return await adminEmailOverview(res);
       }
+      if (req.query?.view === 'admin-alerts') {
+        if (!session || session.recovery) return fail(res, 403, 'Owner access only.');
+        return await ownerAlerts(res, session.user);
+      }
       if (!session) return res.status(200).json(signedOut);
       return res.status(200).json(session.recovery ? recoverySnapshot(session.user) : await snapshot(session.user));
     }
@@ -328,6 +368,9 @@ export default async function handler(req, res) {
       return res.status(200).json({ recorded: true });
     }
     if (adminEmailActions.includes(action)) return await editAdminEmail(req, res, session.user, body);
+    if (action === 'admin-alert-test' || action === 'admin-credit-save') {
+      return await ownerAlerts(res, session.user, action, body.cents);
+    }
     if (action === 'trial') return await beginFreeTrial(req, res, session.user);
     if (action === 'email-preference') {
       if (typeof body.enabled !== 'boolean') return fail(res, 400, 'Choose an email preference.');

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { fail, requireMember, requireSameOrigin } from './member-auth.js';
 import { reserveUsage, settleUsage } from './member-store.js';
+import { backgroundOwnerAlert, notifyGeminiDepleted } from './owner-alerts.js';
 
 function pcmSeconds(bytes, mimeType) {
   if (bytes.length >= 12 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WAVE') {
@@ -86,6 +87,7 @@ export function withUsage(kind, generation, validate) {
         send(body) { this.body = body; return this; }
       };
       await generation(req, result);
+      if (result.body?.code === 'GEMINI_PREPAY_DEPLETED') backgroundOwnerAlert(notifyGeminiDepleted);
       const success = result.statusCode >= 200 && result.statusCode < 300;
       const used = success && narrates ? renderedSeconds(result.body, headers['Content-Type']) : 0;
       const charged = await settleUsage(member.id, id, used);

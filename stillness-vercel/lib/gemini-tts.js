@@ -47,6 +47,9 @@ export default async function handler(req, res) {
           }
         })
       });
+      if (resp.status === 402) {
+        return res.status(503).json({ error: 'Studio voice is temporarily unavailable.', code: 'GEMINI_PREPAY_DEPLETED' });
+      }
       if (resp.status === 429) {
         return await respondToProviderRateLimit(resp, res, { model, service: 'voice' });
       }

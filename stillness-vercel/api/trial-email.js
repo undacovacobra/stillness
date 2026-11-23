@@ -1,5 +1,6 @@
 import { setEmailPreference } from '../lib/member-store.js';
 import { deliverTrialEmails, emailConfig, secureMatch, tokenMember } from '../lib/trial-email.js';
+import { checkOwnerCredit, deliverOwnerAlerts, ownerAlertConfig } from '../lib/owner-alerts.js';
 
 function preferencePage(res, status, title, message, button = '') {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -37,10 +38,22 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized.' });
   }
   const config = emailConfig();
-  if (!config) return res.status(200).json({ enabled: false });
+  const ownerConfig = ownerAlertConfig();
   try {
-    const result = await deliverTrialEmails({ config });
-    return res.status(200).json({ enabled: true, ...result });
+    const ownerJob = async () => {
+      if (!ownerConfig) return null;
+      await checkOwnerCredit({ config: ownerConfig });
+      return deliverOwnerAlerts({ config: ownerConfig });
+    };
+    const [customer, owner] = await Promise.allSettled([
+      config ? deliverTrialEmails({ config }) : null,
+      ownerJob(),
+    ]);
+    const failed = customer.status === 'rejected' || owner.status === 'rejected';
+    return res.status(failed ? 503 : 200).json({
+      enabled: Boolean(config), ...customer.value, ownerAlerts: owner.value,
+      ...(failed ? { error: 'An email queue could not be processed.' } : {}),
+    });
   } catch {
     return res.status(503).json({ error: 'Trial emails could not be processed.' });
   }
