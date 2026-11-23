@@ -16,6 +16,12 @@
   ],
   "redirects": [
     {
+      "source": "/welcome",
+      "has": [{ "type": "host", "value": "stillness-members.vercel.app" }],
+      "destination": "https://trystillness.vercel.app/welcome",
+      "permanent": false
+    },
+    {
       "source": "/",
       "destination": "/welcome",
       "permanent": false,

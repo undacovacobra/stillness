@@ -11,6 +11,12 @@ export function appOrigin(req) {
   if (url.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) {
     throw new Error('Application origin must use HTTPS.');
   }
+  const publicOrigin = process.env.STILLNESS_PUBLIC_ORIGIN;
+  const requestHost = req?.headers?.host;
+  if (publicOrigin && typeof requestHost === 'string') {
+    const publicUrl = new URL(publicOrigin);
+    if (publicUrl.protocol === 'https:' && requestHost.toLowerCase() === publicUrl.host) return publicUrl.origin;
+  }
   return url.origin;
 }
 

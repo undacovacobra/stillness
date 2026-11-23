@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { requireMember, requireSameOrigin, setMemberSession, setRecovery, hasRecovery } from '../lib/member-auth.js';
+import { appOrigin, requireMember, requireSameOrigin, setMemberSession, setRecovery, hasRecovery } from '../lib/member-auth.js';
 
 const APP = 'https://stillness-members.example';
 const AUTH = 'https://stillness-auth.example';
@@ -25,6 +25,24 @@ test('auth rejects cross-origin writes before they perform any operation', t => 
   const res = response();
   assert.equal(requireSameOrigin({ headers: { origin: 'https://foreign.example', 'content-type': 'application/json' } }, res), false);
   assert.equal(res.code, 403);
+});
+test('the public alias has its own same-origin callbacks and rejects writes from elsewhere', t => {
+  configure(t);
+  const alias = 'https://trystillness.example';
+  const previous = process.env.STILLNESS_PUBLIC_ORIGIN;
+  process.env.STILLNESS_PUBLIC_ORIGIN = alias;
+  t.after(() => {
+    if (previous === undefined) delete process.env.STILLNESS_PUBLIC_ORIGIN;
+    else process.env.STILLNESS_PUBLIC_ORIGIN = previous;
+  });
+  const headers = { host: 'trystillness.example', origin: alias, 'content-type': 'application/json' };
+  assert.equal(appOrigin({ headers }), alias);
+  assert.equal(requireSameOrigin({ headers }, response()), true);
+  const rejected = response();
+  assert.equal(requireSameOrigin({ headers: { ...headers, origin: APP } }, rejected), false);
+  assert.equal(rejected.code, 403);
+  assert.equal(appOrigin({ headers: { ...headers, host: 'untrusted.example', 'x-forwarded-host': 'trystillness.example' } }), APP);
+  assert.equal(appOrigin({ headers: { host: 'stillness-members.example' } }), APP);
 });
 test('server asks Supabase to verify session owner and confirmed email', async t => {
   configure(t);
