@@ -14,7 +14,31 @@
   "crons": [
     { "path": "/api/trial-email", "schedule": "0 15 * * *" }
   ],
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/welcome",
+      "permanent": false,
+      "missing": [
+        { "type": "cookie", "key": "stillness_access" },
+        { "type": "cookie", "key": "stillness_refresh" },
+        { "type": "cookie", "key": "stillness_recovery_access" },
+        { "type": "query", "key": "app" },
+        { "type": "query", "key": "flow" },
+        { "type": "query", "key": "code" },
+        { "type": "query", "key": "error" },
+        { "type": "query", "key": "error_code" },
+        { "type": "query", "key": "billing" },
+        { "type": "query", "key": "password" },
+        { "type": "query", "key": "view" }
+      ]
+    }
+  ],
   "headers": [
+    {
+      "source": "/",
+      "headers": [{ "key": "Cache-Control", "value": "private, no-store" }]
+    },
     {
       "source": "/(.*)",
       "headers": [

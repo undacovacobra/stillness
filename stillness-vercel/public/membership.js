@@ -923,6 +923,9 @@
     if (campaign.get('utm_campaign') === 'bedtime' && ['youtube', 'instagram', 'stillness_sample'].includes(source)) {
       try { sessionStorage.setItem(campaignKey, source); } catch {}
     }
+    if (campaign.get('entry') === 'signup' && !['code', 'flow', 'error', 'password'].some(key => campaign.has(key))) {
+      setAuthMode('signup');
+    }
     if ('BroadcastChannel' in window) {
       channel = new BroadcastChannel('stillness-account');
       channel.addEventListener('message', () => refreshAccount().catch(() => {}));
