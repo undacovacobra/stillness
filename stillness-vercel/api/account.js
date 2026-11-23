@@ -4,7 +4,7 @@ import {
   fail, hasRecovery, isVerified, ownerAccount, pkce, readCookie, requireSameOrigin,
   setMemberSession, setRecovery, writeCookie
 } from '../lib/member-auth.js';
-import { getAdminEmail, getMember, listMembers, saveEmailTemplate, saveProfile, setEmailPreference, startFreeTrial } from '../lib/member-store.js';
+import { getAdminEmail, getMember, listMembers, recordMarketingMilestone, saveEmailTemplate, saveProfile, setEmailPreference, startFreeTrial } from '../lib/member-store.js';
 import { trialIdentifiers } from '../lib/member-trial.js';
 import { deliverTrialEmails, emailConfig } from '../lib/trial-email.js';
 import { knownEmailTemplate, listEmailTemplates, previewEmailTemplate, validateEmailTemplate } from '../lib/trial-email-templates.js';
@@ -317,6 +317,16 @@ export default async function handler(req, res) {
     if (!session) return fail(res, 401, 'Sign in to continue.');
     if (action === 'password') return await updatePassword(req, res, session, password, body.currentPassword);
     if (session.recovery) return fail(res, 403, 'Choose a new password to finish recovering your account.');
+    if (action === 'campaign-source' || action === 'campaign-session') {
+      if (!process.env.MARKETING_REPORT_KEY) return res.status(200).json({ recorded: false });
+      if (action === 'campaign-source') {
+        if (!['youtube', 'instagram', 'stillness_sample'].includes(body.source)) return fail(res, 400, 'Unknown campaign source.');
+        await recordMarketingMilestone(session.user.id, 'attributed', body.source);
+      } else {
+        await recordMarketingMilestone(session.user.id, 'session');
+      }
+      return res.status(200).json({ recorded: true });
+    }
     if (adminEmailActions.includes(action)) return await editAdminEmail(req, res, session.user, body);
     if (action === 'trial') return await beginFreeTrial(req, res, session.user);
     if (action === 'email-preference') {

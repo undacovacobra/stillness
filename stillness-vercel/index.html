@@ -2993,6 +2993,7 @@
       document.getElementById('sessionSaveStatus').textContent = '';
       savePanel.querySelector?.('h1')?.focus();
       stopAllSounds(4000);
+      void window.StillnessMembership?.recordCompletedSession?.();
     }
 
     function toggleSessionPause() {

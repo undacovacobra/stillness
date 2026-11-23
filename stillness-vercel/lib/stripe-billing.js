@@ -119,7 +119,7 @@ function stableKey(kind, id) {
   return 'stillness-' + kind + '-' + createHash('sha256').update(id).digest('hex');
 }
 
-export function createBilling({ stripe, store, settings, now = Date.now }) {
+export function createBilling({ stripe, store, settings, now = Date.now, onPaid }) {
   async function activePrice(kind) {
     const monthly = kind !== 'topup';
     const id = monthly ? settings.monthlyPriceId : settings.topupPriceId;
@@ -234,7 +234,8 @@ export function createBilling({ stripe, store, settings, now = Date.now }) {
       const invoiceSubscription = reference(invoice.parent?.subscription_details?.subscription ?? invoice.subscription);
       if (invoice.status === 'paid' && invoice.amount_paid >= MONTHLY_CENTS && invoice.currency === 'usd' &&
           reference(invoice.customer) === member.stripe_customer_id && invoiceSubscription === subscription.id) {
-        await store.applyBillingEvent({ ...write, entitlement: 'paid' });
+        const applied = await store.applyBillingEvent({ ...write, entitlement: 'paid' });
+        if (settings.live && applied?.applied) onPaid?.(member.user_id);
       }
       return;
     }

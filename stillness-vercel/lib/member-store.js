@@ -36,6 +36,14 @@ export function startFreeTrial(userId, { deviceHash, networkHash }) {
   });
 }
 
+export function recordMarketingMilestone(userId, stage, source = null) {
+  return membershipRpc('stillness_marketing_touch', { p_user_id: userId, p_stage: stage, p_source: source });
+}
+
+export function readMarketingSummary() {
+  return membershipRpc('stillness_marketing_summary', {});
+}
+
 export function saveProfile(userId, { name, goal }) {
   return membershipRpc('stillness_save_profile', { p_user_id: userId, p_name: name, p_goal: goal });
 }

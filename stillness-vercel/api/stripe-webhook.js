@@ -1,3 +1,4 @@
+import { waitUntil } from '@vercel/functions';
 import * as store from '../lib/member-store.js';
 import { BillingError, createBilling, stripeClient, stripeSettings, verifyStripeWebhook } from '../lib/stripe-billing.js';
 
@@ -28,7 +29,15 @@ export async function POST(request) {
   }
 
   try {
-    const billing = createBilling({ stripe: stripeClient(settings.secret), store, settings });
+    const billing = createBilling({ stripe: stripeClient(settings.secret), store, settings,
+      onPaid: userId => {
+        if (process.env.MARKETING_REPORT_KEY) {
+          waitUntil(store.recordMarketingMilestone(userId, 'paid').catch(() => {
+            console.warn({ event: 'marketing_paid_milestone_unavailable' });
+          }));
+        }
+      }
+    });
     await billing.webhook(event);
     return reply(200, { received: true });
   } catch (error) {

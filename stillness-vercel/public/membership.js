@@ -1,6 +1,7 @@
 (() => {
   const accountPath = '/api/account';
   const billingPath = '/api/billing';
+  const campaignKey = 'stillness-campaign-source';
   const plans = new Set(['trialing', 'active']);
   const trialOffer = 'Try 15 narrated minutes over 10 days. No card required. The trial ends automatically.';
   const libraryLocked = 'Start a trial or subscribe to access your saved sessions.';
@@ -21,6 +22,8 @@
   const reveal = (id, visible) => { byId(id).hidden = !visible; };
 
   let snapshot = { user: null };
+  let campaignRequest;
+  let reportedSession;
   let visiblePage = 'loading';
   let authMode = 'login';
   let googleAvailable = false;
@@ -336,6 +339,7 @@
       return;
     }
     snapshot = next;
+    if (snapshot.user && !isRecovery()) void attributeCampaign();
     if (isRecovery() && authMode !== 'recovery') setAuthMode('recovery');
     if (!isRecovery() && authMode === 'recovery') setAuthMode('login');
     refreshEntitlement();
@@ -357,6 +361,29 @@
       profileRequested = false;
       try { window.sessionStorage.removeItem('stillness-open-profile'); } catch {}
       showProfile();
+    }
+  }
+
+  function attributeCampaign() {
+    if (campaignRequest) return campaignRequest;
+    let source;
+    try { source = sessionStorage.getItem(campaignKey); } catch { return; }
+    if (!source) return;
+    campaignRequest = apiRequest(accountPath, { action: 'campaign-source', source }).then(() => {
+      try { sessionStorage.removeItem(campaignKey); } catch {}
+    }).catch(() => {}).finally(() => { campaignRequest = null; });
+    return campaignRequest;
+  }
+
+  async function recordCompletedSession() {
+    if (!snapshot.user || reportedSession === snapshot.user.id) return;
+    const id = snapshot.user.id;
+    reportedSession = id;
+    try {
+      await attributeCampaign();
+      if (snapshot.user?.id === id) await apiRequest(accountPath, { action: 'campaign-session' });
+    } catch {
+      if (reportedSession === id) reportedSession = null;
     }
   }
 
@@ -565,6 +592,7 @@
       accountRevision++;
       let result;
       try {
+        await attributeCampaign();
         result = await apiRequest(accountPath, { action: 'trial' });
       } catch (error) {
         void refreshAccount().catch(() => {});
@@ -825,6 +853,11 @@
   }
 
   function initMembership() {
+    const campaign = new URLSearchParams(location.search);
+    const source = campaign.get('utm_source');
+    if (campaign.get('utm_campaign') === 'bedtime' && ['youtube', 'instagram', 'stillness_sample'].includes(source)) {
+      try { sessionStorage.setItem(campaignKey, source); } catch {}
+    }
     if ('BroadcastChannel' in window) {
       channel = new BroadcastChannel('stillness-account');
       channel.addEventListener('message', () => refreshAccount().catch(() => {}));
@@ -884,6 +917,7 @@
 
   window.StillnessMembership = {
     canGenerate,
+    recordCompletedSession,
     canUseKokoro,
     libraryKey,
     generationProblem,
