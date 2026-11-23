@@ -164,12 +164,53 @@ for (const path of ['../index.html', '../public/index.html']) {
       timePracticeChapters(getActiveSessionPlan().chapters, 3600)`);
     assert.equal(plan.at(-1).cueType, 'close');
     assert.ok(plan.some(chapter => chapter.timingCue));
+    const timed = plan.filter(chapter => chapter.timingCue).map(chapter => chapter.text.trim().toLowerCase());
+    assert.equal(new Set(timed).size, timed.length, 'each timed cue must be spoken at most once');
     assert.ok(p.run(`timePracticeChapters(getActiveSessionPlan().chapters, 3600)
-      .reduce((seconds, chapter) => seconds + pauseCapacity(chapter), 0)`) >= 3600);
+      .reduce((seconds, chapter) => seconds + pauseCapacity(chapter) + timingCueKey(chapter.text).split(' ').length * .3, 0)`) >= 3600);
     assert.ok(p.run(`timedPauseSeconds({
       targetSec: 3600, elapsedSec: 8, chapterIndex: 1,
       chapters: timePracticeChapters(getActiveSessionPlan().chapters, 3600)
     })`) <= 54);
+  });
+
+  test(`${path}: a timing cue never echoes a sentence already in the script or a previous closing cue`, async () => {
+    const p = page(path, async () => {});
+    p.run(`window.spoken = [];
+      state.session.active = true; state.session.targetSec = 300; state.session.elapsedSec = 100;
+      state.session.deviceVoice = { name: 'Pinned device voice' };
+      state.session.chapters = [{ text: TIMING_CUES[0] }, { text: TIMING_CUES[1], timingCue: true }];
+      speakWithBrowserNaturalVoice = (text, voice, done, failure, pinned) => {
+        window.spoken.push({ text, voice: pinned.name });
+        state.session.elapsedSec = state.session.pauseEndsAt + 3;
+        done();
+        return true;
+      };
+      finishAtRequestedTime(state.session);`);
+    await p.run('playClosingCue(state.session)');
+    await p.run('playClosingCue(state.session)');
+    const spoken = p.run('window.spoken');
+    const [first, second] = spoken.map(cue => cue.text);
+    assert.notEqual(first, second);
+    assert.equal(first, p.run('TIMING_CUES[2]'));
+    assert.ok(spoken.every(cue => cue.voice === 'Pinned device voice'));
+    assert.ok(p.run('state.session.pauseRemainingSec') <= 54);
+  });
+
+  test(`${path}: spare timing narration does not delay session startup`, async () => {
+    const requests = [];
+    const p = page(path, async (_url, options) => {
+      const { text, model } = JSON.parse(options.body);
+      requests.push({ text, model });
+      if (text === 'An extra breathing cue.') return new Promise(() => {});
+      return Response.json({ data: 'AAAA', mimeType: 'audio/L16;rate=24000', model: 'gemini-3.8-flash-tts' });
+    });
+    p.run(`state.session.active = true; state.session.studioNarration = true; state.session.settings = { voiceId: 'clara' };
+      state.session.chapters = [{ text: 'Settle in.' }, { text: 'An extra breathing cue.', timingCue: true }, { text: 'Finish gently.' }];`);
+    await p.run('prepareSessionNarration(state.session)');
+    assert.equal(p.run('state.session.phase'), 'ready-voice');
+    assert.deepEqual(requests.map(request => request.text), ['Settle in.', 'Finish gently.', 'An extra breathing cue.']);
+    assert.equal(requests.at(-1).model, 'gemini-3.8-flash-tts');
   });
 
   test(`${path}: a phone interruption pauses progress and offers audio recovery`, () => {
