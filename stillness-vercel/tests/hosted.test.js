@@ -360,7 +360,8 @@ for (const path of ['../index.html', '../public/index.html']) {
 
   test(`${path}: completed sessions survive reload with their exact script and voice`, () => {
     const stored = new Map();
-    const p = page(path, async () => {}, stored);
+    let requests = 0;
+    const p = page(path, async () => { requests++; }, stored);
     p.run(`state.intention = 'Tomorrow I am talking with Jordan about the missed deadline.';
       state.voiceId = 'julian';
       state.session.phase = 'done';
@@ -369,6 +370,8 @@ for (const path of ['../index.html', '../public/index.html']) {
       state.session.settings = captureSessionSettings();
       document.getElementById('sessionSaveTitle').value = 'Before talking with Jordan';`);
     assert.equal(p.run('saveCompletedSession()'), true);
+    assert.equal(requests, 0);
+    assert.match(p.elements.get('sessionSaveStatus').textContent, /No narration minutes were used to save/);
     const entries = p.run('readSessionLibrary()');
     assert.equal(entries.length, 1);
     assert.equal(entries[0].title, 'Before talking with Jordan');

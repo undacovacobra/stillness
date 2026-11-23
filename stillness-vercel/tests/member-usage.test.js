@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import tts from '../api/tts.js';
 import script from '../api/script.js';
 import { withUsage } from '../lib/member-usage.js';
+import { encodeWav } from '../lib/encode-wav.js';
 
 const app = 'https://stillness-members.example';
 const sb = 'https://auth.example';
@@ -44,9 +45,9 @@ test('member without usage cannot reach Gemini', async t => {
   assert.equal(res.code,402);
   assert.equal(res.body.code,'usage_exhausted');
 });
-test('Kokoro reserves a rate-limited slot without charging narration minutes', async t => {
+test('Kokoro charges the length of the generated WAV to its separate balance', async t => {
   setup(t);
-  const wave = Buffer.from('test wav');
+  const wave = Buffer.from(encodeWav(new Float32Array(24000 * 3), 24000));
   const handler = withUsage('kokoro', (_req, res) => {
     res.setHeader('Content-Type', 'audio/wav');
     return res.status(200).send(wave);
@@ -57,12 +58,12 @@ test('Kokoro reserves a rate-limited slot without charging narration minutes', a
     const body = JSON.parse(options.body);
     if (route.endsWith('/stillness_reserve_usage')) {
       assert.equal(body.p_kind, 'kokoro');
-      assert.equal(body.p_seconds, 0);
-      return Response.json({ allowed: true, remaining_seconds: 0, topup_seconds: 0 });
+      assert.ok(body.p_seconds > 0);
+      return Response.json({ allowed: true, remaining_seconds: 0, topup_seconds: 0, kokoro_remaining_seconds: 3593 });
     }
     assert(route.endsWith('/stillness_settle_usage'));
-    assert.equal(body.p_used_seconds, 0);
-    return Response.json({ accepted: true, remaining_seconds: 0, topup_seconds: 0 });
+    assert.equal(body.p_used_seconds, 3);
+    return Response.json({ accepted: true, remaining_seconds: 0, topup_seconds: 0, kokoro_remaining_seconds: 3597 });
   });
   const res = response();
   res.send = res.json;
@@ -70,6 +71,22 @@ test('Kokoro reserves a rate-limited slot without charging narration minutes', a
   assert.equal(res.code, 200);
   assert.equal(res.body, wave);
   assert.equal(res.headers['Content-Type'], 'audio/wav');
+  assert.equal(res.headers['X-Stillness-Kokoro-Seconds'], '3597');
+});
+
+test('an exhausted Kokoro allowance blocks generation before the model runs', async t => {
+  setup(t);
+  const handler = withUsage('kokoro', () => assert.fail('no generation after cap'), () => null);
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    if (String(url).endsWith('/auth/v1/user')) return Response.json(user);
+    assert(String(url).endsWith('/stillness_reserve_usage'));
+    return Response.json({ allowed: false, reason: 'kokoro_limit', kokoro_remaining_seconds: 0 });
+  });
+  const res = response();
+  await handler(req({text:'Breathe.'}), res);
+  assert.equal(res.code,402);
+  assert.equal(res.body.code,'kokoro_exhausted');
+  assert.equal(res.headers['X-Stillness-Kokoro-Seconds'], '0');
 });
 test('generated audio is sent only after successfully recording its measured seconds', async t => {
   setup(t);

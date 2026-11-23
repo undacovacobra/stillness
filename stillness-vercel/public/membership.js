@@ -108,10 +108,17 @@
     return !generationProblem();
   }
 
-  function canUseKokoro() {
-    const member = snapshot.member;
+  function hasPaidNarration(member = snapshot.member) {
     return Boolean(snapshot.user && !isRecovery() && member?.name && member?.goal &&
       member.status === 'active' && memberIsActive(member));
+  }
+
+  function kokoroSeconds(member = snapshot.member) {
+    return Number(member?.kokoro_remaining_seconds) || 0;
+  }
+
+  function canUseKokoro() {
+    return hasPaidNarration() && kokoroSeconds() > 0;
   }
 
   function libraryKey() {
@@ -160,21 +167,28 @@
   function updateBalance() {
     const member = snapshot.member;
     const problem = generationProblem();
-    const kokoro = canUseKokoro() && remainingSeconds(member) <= 0;
+    const outOfPremium = hasPaidNarration(member) && remainingSeconds(member) <= 0;
+    const kokoro = canUseKokoro();
     text('membershipGreeting', accountGreeting(member));
-    text('membershipAllowance', kokoro ? 'You’ve used your premium narration minutes.' :
+    text('membershipAllowance', outOfPremium ? kokoro
+      ? 'Premium minutes used. ' + readableTime(kokoroSeconds(member)) + ' of Kokoro Heart left.'
+      : 'You’ve used this month’s premium and Kokoro Heart minutes.' :
       problem || `${readableTime(remainingSeconds(member))} of narration available`);
     byId('beginMeditationBtn').setAttribute('aria-describedby', 'membershipAllowance');
     for (const id of ['beginMeditationBtn', 'beginFromScriptBtn']) {
       byId(id).disabled = Boolean(problem);
-      reveal(id, !kokoro);
+      reveal(id, !outOfPremium);
     }
     text('membershipStudioProfile', trialCanStart(member) ? 'View free trial' : 'Open membership settings');
-    reveal('membershipStudioOptions', kokoro);
-    reveal('membershipScriptOptions', kokoro);
+    reveal('membershipStudioOptions', outOfPremium);
+    reveal('membershipScriptOptions', outOfPremium);
+    text('membershipScriptVoiceBalance', byId('membershipAllowance').textContent);
+    for (const button of document.querySelectorAll('[data-start-kokoro]')) {
+      button.hidden = !kokoro;
+    }
     if (!canUseKokoro()) reveal('membershipPlayerOptions', false);
-    reveal('membershipStudioProfile', !kokoro && Boolean(problem) && Boolean(snapshot.user));
-    reveal('membershipScriptProfile', !kokoro && Boolean(problem) && Boolean(snapshot.user));
+    reveal('membershipStudioProfile', !outOfPremium && Boolean(problem) && Boolean(snapshot.user));
+    reveal('membershipScriptProfile', !outOfPremium && Boolean(problem) && Boolean(snapshot.user));
     reveal('memberAdminButton', snapshot.owner === true);
     reveal('memberWelcomeAdminButton', snapshot.owner === true);
   }
@@ -198,13 +212,15 @@
     text('memberPlanDescription', trial
       ? stripeTrial ? 'Manage your trial and renewal in billing.' : 'Your trial includes 15 narrated minutes and ends automatically.'
       : paid
-        ? 'Your subscription includes 120 narrated minutes per paid period.'
+        ? 'Each billing period includes 120 premium narration minutes and 60 Kokoro Heart minutes.'
         : canStart
           ? trialOffer
-          : 'Subscribe for 120 narrated minutes per month.');
+          : 'Subscribe for 120 premium narration minutes and 60 Kokoro Heart minutes per month.');
     reveal('memberBalance', eligible || Number(member?.topup_seconds) > 0);
     text('memberIncluded', readableTime(eligible ? member.remaining_seconds : 0));
     text('memberTopupLeft', readableTime(member?.topup_seconds));
+    text('memberKokoroLeft', readableTime(kokoroSeconds(member)));
+    byId('memberKokoroLeft').parentElement.hidden = !paid;
     byId('memberTopupLeft').parentElement.hidden = trial && !member.topup_seconds;
 
     reveal('memberStartTrial', canStart);
@@ -376,13 +392,17 @@
       const issue = await response.clone().json().catch(() => ({}));
       pendingGenerationProblem = typeof issue.error === 'string' ? issue.error : generationProblem() || 'Open your profile to check your membership.';
     }
-    if (path === '/api/tts') {
+    if (path === '/api/tts' || path === '/api/kokoro') {
       const included = response.headers.get('X-Stillness-Remaining-Seconds');
       const extra = response.headers.get('X-Stillness-Topup-Seconds');
+      const kokoro = response.headers.get('X-Stillness-Kokoro-Seconds');
       if (snapshot.user?.id === requestedBy && snapshot.member && included !== null && extra !== null) {
         const amounts = [Number(included), Number(extra)];
         if (amounts.every(value => Number.isSafeInteger(value) && value >= 0)) {
           snapshot.member = { ...snapshot.member, remaining_seconds: amounts[0], topup_seconds: amounts[1] };
+          if (kokoro !== null && Number.isSafeInteger(Number(kokoro)) && Number(kokoro) >= 0) {
+            snapshot.member.kokoro_remaining_seconds = Number(kokoro);
+          }
           updateBalance();
           if (visiblePage === 'profile') renderBilling();
         }

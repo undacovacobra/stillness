@@ -109,8 +109,9 @@
           <dl id="memberBalance" class="member-balance" hidden>
             <div><dt>Included narration left</dt><dd id="memberIncluded"></dd></div>
             <div><dt>Purchased narration left</dt><dd id="memberTopupLeft"></dd></div>
+            <div><dt>Kokoro Heart left</dt><dd id="memberKokoroLeft"></dd></div>
           </dl>
-          <p class="member-detail">Only generated narration uses minutes, including voice previews. Quiet pauses and background sounds are included.</p>
+          <p class="member-detail">Saving sessions uses zero minutes. Generating narration, including for previews and replays, uses your voice allowance.</p>
           <div class="member-actions">
             <button id="memberStartTrial" class="main-button" type="button" hidden>Start 10-day trial</button>
             <button id="memberSubscribe" class="main-button" data-billing="subscribe-paid" type="button" hidden>Subscribe · $11.99/month</button>
@@ -291,6 +292,7 @@
       </div>
       <div id="sessionSavePanel" class="finished hidden">
         <h1 tabindex="-1">Save this session?</h1>
+        <p class="member-detail">Saving to your library uses zero narration minutes.</p>
         <label for="sessionSaveTitle">Session name</label>
         <input id="sessionSaveTitle" type="text" maxlength="100">
         <p id="sessionSaveStatus" class="notice" role="status"></p>
@@ -303,6 +305,7 @@
 
     <section id="viewLibrary" class="library hidden">
       <h1 tabindex="-1">Your library</h1>
+      <p class="member-detail">Saving and reading sessions are free. Replaying a session can use minutes when Stillness generates its voice audio.</p>
       <div id="sessionLibraryList"></div>
     </section>
 
@@ -316,7 +319,7 @@
         <button id="regenerateScriptBtn" class="text-action" type="button">New variation</button>
       </div>
       <div id="membershipScriptOptions" class="member-voice-options" hidden>
-        <p class="notice">You’ve used your premium narration minutes.</p>
+        <p id="membershipScriptVoiceBalance" class="notice">You’ve used your premium narration minutes.</p>
         <button class="main-button" data-start-kokoro type="button">Use Kokoro Heart · Free</button>
         <button class="text-action" data-buy-voice-time type="button">Buy 60 minutes · $4.99</button>
       </div>
@@ -2118,7 +2121,7 @@
         state.session.savedId = entry.id;
         document.getElementById('saveSessionBtn').disabled = true;
         document.getElementById('saveSessionBtn').textContent = 'Saved to library';
-        document.getElementById('sessionSaveStatus').textContent = 'Saved on this device.';
+        document.getElementById('sessionSaveStatus').textContent = 'Saved on this device. No narration minutes were used to save it.';
         showToast('Session saved to your library.');
         return true;
       } catch (error) {
@@ -2538,7 +2541,9 @@
       });
       if (!response.ok || !response.headers.get('content-type')?.startsWith('audio/wav')) {
         const problem = await response.json().catch(() => ({}));
-        throw new Error(problem.error || 'Kokoro Heart couldn’t prepare the voice. Try again.');
+        const error = new Error(problem.error || 'Kokoro Heart couldn’t prepare the voice. Try again.');
+        error.code = problem.code;
+        throw error;
       }
       return { blob: await response.blob(), mimeType: 'audio/wav' };
     }
@@ -2575,6 +2580,15 @@
 
     function kokoroRecovery(session, retry, error) {
       session.phase = 'audio-error';
+      if (error?.code === 'kokoro_exhausted') {
+        session.kokoroExhausted = true;
+        pendingVoiceAction = null;
+        stopAllSounds(900);
+        setOrbState('listen', 'Kokoro Heart minutes used');
+        setPlayerText(error.message, true);
+        document.getElementById('playPauseBtn').textContent = 'Check minutes';
+        return;
+      }
       pendingVoiceAction = retry;
       setOrbState('listen', 'Kokoro Heart unavailable');
       document.getElementById('playPauseBtn').textContent = 'Retry Kokoro Heart';
@@ -2874,6 +2888,7 @@
       if (!state.session.active) return;
       if (!state.session.paused && ['audio-blocked', 'audio-error'].includes(state.session.phase)) {
         const member = window.StillnessMembership;
+        if (state.session.kokoroExhausted) { member?.openGenerationProfile(); return; }
         if (member?.generationDenial()) {
           const permitted = state.session.narrationMode === 'kokoro' ? member.canUseKokoro() : member.canGenerate();
           if (!permitted) { member.openGenerationProfile(); return; }

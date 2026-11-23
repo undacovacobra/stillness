@@ -85,11 +85,11 @@ function publicData(member) {
   if (!member) return null;
   const {
     user_id, name, goal, status, period_ends_at, trial_used, remaining_seconds,
-    topup_seconds, last_used_at, cancel_at_period_end, stripe_customer_id, subscription_id
+    topup_seconds, kokoro_remaining_seconds, last_used_at, cancel_at_period_end, stripe_customer_id, subscription_id
   } = member;
   return {
     user_id, name, goal, status, period_ends_at, trial_used, remaining_seconds,
-    topup_seconds, last_used_at, cancel_at_period_end,
+    topup_seconds, kokoro_remaining_seconds, last_used_at, cancel_at_period_end,
     billing_customer: Boolean(stripe_customer_id), has_subscription: Boolean(subscription_id),
     marketing_email_opt_in: member.marketing_email_opt_in === true,
     trial_eligible: !trial_used && status === 'inactive' && !subscription_id,
