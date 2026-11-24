@@ -71,7 +71,7 @@ function page(path, fetch, stored = new Map()) {
   const context = vm.createContext({ document, window: { addEventListener() {}, name: '' },
     location: { protocol: 'https:', hostname: 'stillness.example' }, localStorage: storage,
     sessionStorage: storage, fetch, setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0,
-    clearInterval() {}, URL, Blob, atob, console, AbortController });
+    clearInterval() {}, URL, Blob, atob, console, AbortController, crypto: globalThis.crypto });
   vm.runInContext(source, context);
   return { run: code => vm.runInContext(code, context), elements };
 }
@@ -109,11 +109,12 @@ for (const path of ['../index.html', '../public/index.html']) {
     assert.ok(p.run('getActiveSessionPlan().chapters.find(ch=>ch.cueType==="practice").pauseSec') < normal);
   });
 
-  test(`${path}: an older saved session keeps its script while oversized pauses are shortened`, () => {
+  test(`${path}: an older saved session keeps its script while oversized pauses are shortened`, async () => {
     const p = page(path, async () => {});
-    p.run(`state.durationMin=30;state.session.phase='done';state.session.totalEstSec=1200;
+    await p.run(`state.durationMin=30;state.session.phase='done';state.session.totalEstSec=1200;
       state.session.chapters=[{text:'Exact saved practice.',cueType:'practice',pauseSec:300}];
-      saveCompletedSession();restoreSavedSession(readSessionLibrary()[0].id,false);`);
+      saveCompletedSession();`);
+    p.run('restoreSavedSession(readScriptLibrary(sessionLibraryKey())[0])');
     const plan = p.run('getActiveSessionPlan()');
     assert.equal(plan.chapters[0].text, 'Exact saved practice.');
     assert.ok(plan.chapters[0].pauseSec <= 60);
@@ -382,12 +383,12 @@ for (const path of ['../index.html', '../public/index.html']) {
     assert.deepEqual(levels, ['average','minimal','wordy']);
   });
 
-  test(`${path}: script detail survives library save and restore`, () => {
+  test(`${path}: script detail survives library save and restore`, async () => {
     const p = page(path, async () => {});
-    p.run(`state.wordiness = 'minimal'; state.session.phase = 'done';
+    await p.run(`state.wordiness = 'minimal'; state.session.phase = 'done';
       state.session.chapters = [{text:'A brief practice for Jordan.'}];
-      state.session.settings = captureSessionSettings(); saveCompletedSession();
-      state.wordiness = 'wordy'; restoreSavedSession(readSessionLibrary()[0].id, false);`);
+      state.session.settings = captureSessionSettings(); saveCompletedSession();`);
+    p.run("state.wordiness = 'wordy'; restoreSavedSession(readScriptLibrary(sessionLibraryKey())[0]);");
     assert.equal(p.run('state.wordiness'), 'minimal');
     assert.equal(p.run('getActiveSessionPlan().chapters[0].text'), 'A brief practice for Jordan.');
   });
@@ -399,7 +400,7 @@ for (const path of ['../index.html', '../public/index.html']) {
     assert.ok(minimal < average && average < wordy, `${minimal}, ${average}, ${wordy}`);
   });
 
-  test(`${path}: completed sessions survive reload with their exact script and voice`, () => {
+  test(`${path}: saved scripts survive reload with their exact text and voice settings`, async () => {
     const stored = new Map();
     let requests = 0;
     const p = page(path, async () => { requests++; }, stored);
@@ -410,35 +411,35 @@ for (const path of ['../index.html', '../public/index.html']) {
       state.session.totalEstSec = 180;
       state.session.settings = captureSessionSettings();
       document.getElementById('sessionSaveTitle').value = 'Before talking with Jordan';`);
-    assert.equal(p.run('saveCompletedSession()'), true);
+    assert.equal(await p.run('saveCompletedSession()'), true);
     assert.equal(requests, 0);
-    assert.match(p.elements.get('sessionSaveStatus').textContent, /No narration minutes were used to save/);
-    const entries = p.run('readSessionLibrary()');
+    assert.match(p.elements.get('sessionSaveStatus').textContent, /Script saved/);
+    const entries = p.run('readScriptLibrary(sessionLibraryKey())');
     assert.equal(entries.length, 1);
     assert.equal(entries[0].title, 'Before talking with Jordan');
     const reloaded = page(path, async () => {}, stored);
-    reloaded.run(`restoreSavedSession(${JSON.stringify(entries[0].id)}, false)`);
+    reloaded.run('restoreSavedSession(readScriptLibrary(sessionLibraryKey())[0])');
     assert.equal(reloaded.run('state.voiceId'), 'julian');
     assert.equal(reloaded.run('getActiveSessionPlan().chapters[0].text'), 'Let the thought of your conversation with Jordan pass with this breath.');
     assert.equal(reloaded.run('state.intention'), 'Tomorrow I am talking with Jordan about the missed deadline.');
   });
 
-  test(`${path}: a full library storage never reports a session as saved`, () => {
+  test(`${path}: a full library storage never reports a session as saved`, async () => {
     const p = page(path, async () => {});
     p.run(`state.session.phase = 'done'; state.session.chapters = [{text:'Breathe.'}];
       localStorage.setItem = () => { throw new Error('QuotaExceeded'); };`);
-    assert.equal(p.run('saveCompletedSession()'), false);
+    assert.equal(await p.run('saveCompletedSession()'), false);
     assert.equal(p.run('Boolean(state.session.savedId)'), false);
   });
 
-  test(`${path}: saving keeps the mix settled on during playback and the note used to write it`, () => {
+  test(`${path}: saving keeps the mix settled on during playback and the note used to write it`, async () => {
     const p = page(path, async () => {});
-    p.run(`state.intention = 'My original note'; state.session.settings = captureSessionSettings();
+    await p.run(`state.intention = 'My original note'; state.session.settings = captureSessionSettings();
       state.session.chapters = [{text:'My original practice'}];
       state.intention = 'A different note typed in Studio'; state.voiceId = 'julian';
       state.voiceVolume = 55; state.sounds[0].volume = 25; state.sounds[0].enabled = false;
       finishSession(); saveCompletedSession();`);
-    const saved = p.run('readSessionLibrary()[0]');
+    const saved = p.run('readScriptLibrary(sessionLibraryKey())[0]');
     assert.equal(saved.settings.intention, 'My original note');
     assert.equal(saved.settings.voiceId, 'julian');
     assert.equal(saved.settings.voiceVolume, 55);
@@ -490,11 +491,11 @@ for (const path of ['../index.html', '../public/index.html']) {
   test(`${path}: restoring a saved script takes precedence over in-flight generation for the same note`, async () => {
     let resolve;
     const p = page(path, () => new Promise(done => { resolve = done; }));
-    p.run(`state.intention = 'Meeting Jordan tomorrow'; state.session.phase = 'done';
+    await p.run(`state.intention = 'Meeting Jordan tomorrow'; state.session.phase = 'done';
       state.session.chapters = Array.from({length:5}, () => ({text:'Exact saved practice for Jordan', pauseSec:4}));
       saveCompletedSession();`);
     const pending = p.run('ensurePersonalScript()');
-    p.run('restoreSavedSession(readSessionLibrary()[0].id, false)');
+    p.run('restoreSavedSession(readScriptLibrary(sessionLibraryKey())[0])');
     resolve(new Response(JSON.stringify({chapters:['New AI words','New AI words','New AI words','New AI words','New AI words']})));
     await pending;
     assert.equal(p.run('getActiveSessionPlan().chapters[0].text'), 'Exact saved practice for Jordan');

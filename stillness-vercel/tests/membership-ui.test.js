@@ -38,13 +38,13 @@ test('the membership clone reads and writes libraries only for the signed-in acc
   const { data, run } = browserStorage(identity);
   const entry = { id: 'saved-1', title: 'My private session', settings: { intention: 'Personal' }, chapters: [{ text: 'Breathe slowly.' }] };
   data.set('stillness_session_library_v1', JSON.stringify([entry]));
-  assert.equal(run('readSessionLibrary().length'), 0);
+  assert.equal(run('readScriptLibrary(sessionLibraryKey()).length'), 0);
   data.set('stillness_session_library_v1:first', JSON.stringify([entry]));
-  assert.equal(run('readSessionLibrary()[0].title'), 'My private session');
+  assert.equal(run('readScriptLibrary(sessionLibraryKey())[0].title'), 'My private session');
   identity.current = 'second';
-  assert.equal(run('readSessionLibrary().length'), 0);
+  assert.equal(run('readScriptLibrary(sessionLibraryKey()).length'), 0);
   identity.current = null;
-  assert.equal(run('readSessionLibrary().length'), 0);
+  assert.equal(run('readScriptLibrary(sessionLibraryKey()).length'), 0);
 });
 
 test('both entry pages offer Google and email, with a separate card-free trial action', () => {
@@ -82,9 +82,10 @@ test('a saved session cannot be opened after library access is revoked', () => {
   const entry = {id:'locked', title:'Private', settings:{intention:'Personal'}, chapters:[{text:'Rest.'}]};
   const key = 'stillness_session_library_v1:first';
   data.set(key, JSON.stringify([entry]));
-  assert.equal(run('readSessionLibrary().length'), 1);
+  assert.equal(run('readScriptLibrary(sessionLibraryKey()).length'), 1);
+  run('globalThis.saved = readScriptLibrary(sessionLibraryKey())[0]');
   identity.current = null;
-  assert.equal(run('restoreSavedSession("locked")'), false);
-  assert.equal(run('readSessionLibrary().length'), 0);
+  assert.equal(run('restoreSavedSession(saved)'), false);
+  assert.equal(run('readScriptLibrary(sessionLibraryKey()).length'), 0);
   assert.equal(JSON.parse(data.get(key))[0].id, 'locked');
 });

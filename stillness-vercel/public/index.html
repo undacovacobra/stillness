@@ -111,7 +111,7 @@
             <div><dt>Purchased narration left</dt><dd id="memberTopupLeft"></dd></div>
             <div><dt>Kokoro Heart left</dt><dd id="memberKokoroLeft"></dd></div>
           </dl>
-          <p class="member-detail">Saving sessions uses zero minutes. Generating narration, including for previews and replays, uses your voice allowance.</p>
+          <p class="member-detail">Generating a new meditation uses voice minutes. Saving, replaying, and downloading its recording are free.</p>
           <div class="member-actions">
             <button id="memberStartTrial" class="main-button" type="button" hidden>Start 10-day trial</button>
             <button id="memberSubscribe" class="main-button" data-billing="subscribe-paid" type="button" hidden>Subscribe · $11.99/month</button>
@@ -292,12 +292,13 @@
       </div>
       <div id="sessionSavePanel" class="finished hidden">
         <h1 tabindex="-1">Save this session?</h1>
-        <p class="member-detail">Saving to your library uses zero narration minutes.</p>
+        <p class="member-detail">Save your session to replay or download the audio without using more narration minutes.</p>
         <label for="sessionSaveTitle">Session name</label>
         <input id="sessionSaveTitle" type="text" maxlength="100">
         <p id="sessionSaveStatus" class="notice" role="status"></p>
         <div class="finish-actions">
           <button id="saveSessionBtn" class="main-button" type="button">Save to library</button>
+          <button id="downloadSessionBtn" class="text-action" type="button" hidden>Download audio</button>
           <button id="openLibraryBtn" class="text-action" type="button">Open library</button>
         </div>
       </div>
@@ -305,7 +306,7 @@
 
     <section id="viewLibrary" class="library hidden">
       <h1 tabindex="-1">Your library</h1>
-      <p class="member-detail">Saving and reading sessions are free. Replaying a session can use minutes when Stillness generates its voice audio.</p>
+      <p class="member-detail">Recordings are saved on this device. Replay or download them anytime while you have library access. Both use zero narration minutes.</p>
       <div id="sessionLibraryList"></div>
     </section>
 
@@ -397,6 +398,7 @@
   </dialog>
 
   <div id="toastContainer" role="status"></div>
+  <script src="./session-recordings.js"></script>
   <script src="./ambient-player.js"></script>
   <script src="./kokoro-narration.js"></script>
   <script>
@@ -558,6 +560,13 @@
     let cachedBrowserVoices = [];
 
     const voicePlayer = document.getElementById('voicePlayer');
+    function setVoiceVolume(volume) {
+      if (window.StillnessAudio?.setVoiceVolume) window.StillnessAudio.setVoiceVolume(voicePlayer, volume);
+      else voicePlayer.volume = volume;
+    }
+    function playVoice() {
+      return window.StillnessAudio?.playVoice?.(voicePlayer) ?? voicePlayer.play();
+    }
     voicePlayer.addEventListener('pause', () => {
       if (!state.session.active || state.session.paused || !['speaking', 'buffering-voice'].includes(state.session.phase) || voicePlayer.ended || !voicePlayer.paused) return;
       voiceNeedsGesture = true;
@@ -1484,7 +1493,7 @@
 
     function resumeLoadedVoice(run) {
       const source = voicePlayer.src;
-      return voicePlayer.play().then(() => {
+      return playVoice().then(() => {
         if (run === voicePlaybackRun && voicePlayer.src === source && !state.session.paused) markVoicePlaying();
       });
     }
@@ -1515,14 +1524,14 @@
       if (window.StillnessAudio?.supported) window.StillnessAudio.unlock().catch(() => showAudioRecovery('Tap Resume Audio to allow the soundscape.'));
       const run = voicePlaybackRun;
       voicePlayer.src = SILENT_WAV;
-      voicePlayer.volume = 0;
+      setVoiceVolume(0);
       const unlock = voicePlayer.play();
       if (unlock?.then) unlock.then(() => {
         // A late unlock must not pause narration which has replaced the silent clip.
         if (run === voicePlaybackRun && voicePlayer.src === SILENT_WAV) {
           voicePlayer.pause();
           voicePlayer.currentTime = 0;
-          voicePlayer.volume = state.voiceVolume / 100;
+          setVoiceVolume(state.voiceVolume / 100);
         }
       }).catch(() => {});
     }
@@ -1611,10 +1620,10 @@
         showAudioRecovery('Your browser could not play the narration. Tap Resume Audio to retry.');
       };
       voicePlayer.src = url;
-      voicePlayer.volume = state.voiceVolume / 100;
+      setVoiceVolume(state.voiceVolume / 100);
       if (state.session.active && state.session.paused) { voiceNeedsGesture = true; return true; }
       try {
-        await voicePlayer.play();
+        await playVoice();
         if (run !== voicePlaybackRun || settled) return false;
         markVoicePlaying();
       } catch (error) {
@@ -2024,7 +2033,7 @@
 
       voicePlayer.onended = () => finishPreview(false);
       voicePlayer.onerror = () => finishPreview(true);
-      voicePlayer.volume = state.voiceVolume / 100;
+      setVoiceVolume(state.voiceVolume / 100);
       voicePlayer.src = folder + voiceObj.id + '.mp3';
       try {
         await voicePlayer.play();
@@ -2068,8 +2077,12 @@
       updateMixPreviewButton();
     }
 
-    // Saved practices contain the script and settings; credentials never enter the library.
+    // Keep older script entries readable alongside recordings saved in IndexedDB.
     const SESSION_LIBRARY_KEY = 'stillness_session_library_v1';
+    let libraryViewRevision = 0;
+    let libraryPlaybackRevision = 0;
+    let activeLibraryRecording = null;
+
     function sessionLibraryKey() {
       const member = window.StillnessMembership;
       return member ? member.libraryKey() : SESSION_LIBRARY_KEY;
@@ -2077,66 +2090,164 @@
     function captureSessionSettings() {
       return JSON.parse(JSON.stringify({ intention: state.intention, style: state.style, durationMin: state.durationMin, wordiness: state.wordiness, voiceId: state.voiceId, voiceVolume: state.voiceVolume, pauseMode: state.pauseMode, pausePace: state.pausePace, sounds: state.sounds, variationSeed: state.variationSeed }));
     }
-    function readSessionLibrary() {
-      const key = sessionLibraryKey();
+    function readScriptLibrary(key) {
       if (!key) return [];
       try {
         const saved = JSON.parse(localStorage.getItem(key) || '[]');
         return Array.isArray(saved) ? saved.filter(item => item && typeof item.id === 'string' && typeof item.title === 'string' && item.settings && typeof item.settings.intention === 'string' && Array.isArray(item.chapters) && item.chapters.length && item.chapters.every(ch => ch && typeof ch.text === 'string' && ch.text.trim())) : [];
       } catch (error) { return []; }
     }
-    function saveCompletedSession() {
+    async function saveCompletedSession() {
       const key = sessionLibraryKey();
       if (!key) {
         window.StillnessMembership?.openLibraryProfile?.();
         return false;
       }
-      if (state.session.phase !== 'done' || !state.session.chapters.length) return false;
-      if (state.session.savedId) { showToast('This session is already in your library.'); return true; }
-      const settings = state.session.settings || captureSessionSettings();
-      const entry = { id: Date.now().toString(36) + Math.random().toString(36).slice(2), title: document.getElementById('sessionSaveTitle').value.trim().slice(0, 100) || settings.intention.slice(0, 70) || 'A moment of stillness', createdAt: new Date().toISOString(), settings, chapters: JSON.parse(JSON.stringify(state.session.chapters.filter(chapter => !chapter.timingCue))), totalEstSec: state.session.totalEstSec };
+      const session = state.session;
+      if (session.phase !== 'done' || !session.chapters.length || session.saving) return false;
+      if (session.savedId) return true;
+      const button = document.getElementById('saveSessionBtn');
+      const status = document.getElementById('sessionSaveStatus');
+      const settings = session.settings || captureSessionSettings();
+      const entry = {
+        id: crypto.randomUUID(),
+        title: document.getElementById('sessionSaveTitle').value.trim() || settings.intention.slice(0, 70) || 'A moment of stillness',
+        createdAt: new Date().toISOString(),
+        settings,
+        chapters: session.chapters.filter(chapter => !chapter.timingCue),
+        totalEstSec: session.elapsedSec
+      };
+      session.saving = true;
+      button.disabled = true;
+      status.textContent = 'Saving your session…';
       try {
-        const library = readSessionLibrary();
-        localStorage.setItem(key, JSON.stringify([entry, ...library]));
-        state.session.savedId = entry.id;
-        document.getElementById('saveSessionBtn').disabled = true;
-        document.getElementById('saveSessionBtn').textContent = 'Saved to library';
-        document.getElementById('sessionSaveStatus').textContent = 'Saved on this device. No narration minutes were used to save it.';
-        showToast('Session saved to your library.');
+        const recording = await session.recording;
+        if (key !== sessionLibraryKey()) return false;
+        if (recording?.size) {
+          await window.StillnessRecordings.save(key, entry, recording);
+        } else {
+          localStorage.setItem(key, JSON.stringify([entry, ...readScriptLibrary(key)]));
+        }
+        session.savedId = entry.id;
+        if (session === state.session && key === sessionLibraryKey()) {
+          button.textContent = 'Saved to library';
+          status.textContent = recording?.size
+            ? 'Recording saved. Replay and downloads use zero minutes.'
+            : 'Script saved. Audio was unavailable for this session.';
+          if (state.view === 'library') void renderSessionLibrary();
+        }
         return true;
       } catch (error) {
-        document.getElementById('sessionSaveStatus').textContent = 'This browser could not save the session. Free some storage or enable browser storage, then try again.';
+        if (session === state.session) status.textContent = 'Could not save on this device. You can download the recording if it’s available.';
         return false;
+      } finally {
+        session.saving = false;
+        if (session === state.session) button.disabled = Boolean(session.savedId);
       }
     }
+
     function escapeText(value) { return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char])); }
-    function renderSessionLibrary() {
-      const entries = readSessionLibrary();
+
+    function clearLibraryPlayback() {
+      libraryPlaybackRevision++;
+      if (!activeLibraryRecording) return;
+      const { player, url } = activeLibraryRecording;
+      player.pause();
+      player.removeAttribute('src');
+      player.load();
+      player.hidden = true;
+      URL.revokeObjectURL(url);
+      activeLibraryRecording = null;
+    }
+
+    function downloadRecording(recording, title) {
+      const url = URL.createObjectURL(recording);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = window.StillnessRecordings.filename(title, recording.type);
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    }
+
+    async function useSavedRecording(key, entry, player) {
+      if (player) clearLibraryPlayback();
+      const revision = libraryPlaybackRevision;
+      try {
+        const recording = await window.StillnessRecordings.read(key, entry.id);
+        if (revision !== libraryPlaybackRevision || state.view !== 'library' || key !== sessionLibraryKey()) return;
+        if (!recording?.size) throw new Error('Recording unavailable.');
+        if (!player) {
+          downloadRecording(recording, entry.title);
+          return;
+        }
+        const url = URL.createObjectURL(recording);
+        activeLibraryRecording = { player, url };
+        player.src = url;
+        player.hidden = false;
+        await player.play().catch(() => player.focus());
+      } catch {
+        if (revision === libraryPlaybackRevision) showToast('This recording could not be opened on this device.');
+      }
+    }
+
+    async function renderSessionLibrary() {
+      const key = sessionLibraryKey();
+      if (!key) return;
+      const revision = ++libraryViewRevision;
       const list = document.getElementById('sessionLibraryList');
+      clearLibraryPlayback();
+      list.textContent = 'Loading your sessions…';
+      const recordings = await window.StillnessRecordings?.list(key).catch(() => []) || [];
+      if (revision !== libraryViewRevision || state.view !== 'library' || key !== sessionLibraryKey()) return;
+      const entries = [...recordings, ...readScriptLibrary(key)].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
       list.innerHTML = entries.length ? entries.map(entry => {
         const voice = entry.settings.narrationMode === 'kokoro' ? 'Kokoro Heart' :
           VOICES.find(v => v.id === entry.settings.voiceId)?.name || 'Studio Voice';
         const style = MEDITATION_STYLES.find(v => v.id === entry.settings.style)?.name || 'Meditation';
         return `<article class="saved-row">
-          <h2>${escapeText(entry.title)}</h2>
-          <p>${escapeText(style)} · ${escapeText(voice)} · ${escapeText(entry.settings.durationMin)} min</p>
+          <div>
+            <h2>${escapeText(entry.title)}</h2>
+            <p>${entry.library ? `${escapeText(style)} · ${escapeText(voice)} · ${formatTime(entry.totalEstSec)}` : 'Saved script'}</p>
+          </div>
           <div class="choice-group">
-            <button type="button" data-replay-session="${escapeText(entry.id)}" class="text-action">Replay</button>
+            ${entry.library ? `<button type="button" data-replay-session="${escapeText(entry.id)}" class="text-action">Replay</button>
+            <button type="button" data-download-session="${escapeText(entry.id)}" class="text-action">Download</button>` : ''}
             <button type="button" data-review-session="${escapeText(entry.id)}" class="text-action">Read script</button>
             <button type="button" data-delete-session="${escapeText(entry.id)}" class="text-action">Delete</button>
           </div>
+          ${entry.library ? `<audio controls playsinline preload="none" aria-label="${escapeText(entry.title)} recording" hidden></audio>` : ''}
         </article>`;
       }).join('') : '<p>Finished sessions you save will appear here.</p>';
-      list.querySelectorAll('[data-replay-session]').forEach(btn => btn.addEventListener('click', () => restoreSavedSession(btn.dataset.replaySession, true)));
-      list.querySelectorAll('[data-review-session]').forEach(btn => btn.addEventListener('click', () => restoreSavedSession(btn.dataset.reviewSession, false)));
-      list.querySelectorAll('[data-delete-session]').forEach(btn => btn.addEventListener('click', () => {
-        const key = sessionLibraryKey();
-        if (!key) return;
-        try { localStorage.setItem(key, JSON.stringify(readSessionLibrary().filter(entry => entry.id !== btn.dataset.deleteSession))); renderSessionLibrary(); }
-        catch (error) { showToast('Could not update your library. Please try again.'); }
+      const lookup = new Map(entries.map(entry => [entry.id, entry]));
+      list.querySelectorAll('[data-replay-session]').forEach(btn => btn.addEventListener('click', () => {
+        void useSavedRecording(key, lookup.get(btn.dataset.replaySession), btn.closest('article').querySelector('audio'));
+      }));
+      list.querySelectorAll('[data-download-session]').forEach(btn => btn.addEventListener('click', () => {
+        void useSavedRecording(key, lookup.get(btn.dataset.downloadSession));
+      }));
+      list.querySelectorAll('[data-review-session]').forEach(btn => btn.addEventListener('click', () => {
+        restoreSavedSession(lookup.get(btn.dataset.reviewSession));
+      }));
+      list.querySelectorAll('[data-delete-session]').forEach(btn => btn.addEventListener('click', async () => {
+        if (key !== sessionLibraryKey()) return;
+        btn.disabled = true;
+        const entry = lookup.get(btn.dataset.deleteSession);
+        try {
+          if (entry.library) await window.StillnessRecordings.remove(key, entry.id);
+          else localStorage.setItem(key, JSON.stringify(readScriptLibrary(key).filter(item => item.id !== entry.id)));
+          if (state.view === 'library' && key === sessionLibraryKey()) void renderSessionLibrary();
+        } catch {
+          btn.disabled = false;
+          showToast('Could not update your library. Please try again.');
+        }
       }));
     }
+
     function lockSessionLibrary() {
+      libraryViewRevision++;
+      clearLibraryPlayback();
       document.getElementById('sessionLibraryList').replaceChildren();
       const saved = state.loadedSession;
       const needsRedirect = state.view === 'library' || (state.view === 'script' && saved);
@@ -2169,17 +2280,12 @@
 
     window.StillnessStudio = { lockLibrary: lockSessionLibrary };
 
-    function restoreSavedSession(id, replay = false) {
+    function restoreSavedSession(entry) {
       if (!sessionLibraryKey()) {
         window.StillnessMembership?.openLibraryProfile?.();
         return false;
       }
-      const entry = readSessionLibrary().find(item => item.id === id);
       if (!entry) return false;
-      const member = window.StillnessMembership;
-      const replayKokoro = replay && entry.settings.narrationMode === 'kokoro' && member?.canUseKokoro();
-      const chooseVoice = replay && !replayKokoro && member?.canUseKokoro() && !member.canGenerate();
-      if (replay && !replayKokoro && !chooseVoice && !generationCanStart()) return false;
       clearSessionTimers(); stopVoicePlayback(); stopAllSounds(200);
       state.session.active = false;
       const setup = entry.settings;
@@ -2199,8 +2305,7 @@
       document.getElementById('voiceVolumeSlider').value = state.voiceVolume;
       document.getElementById('voiceVolumeVal').textContent = `${state.voiceVolume}%`;
       renderWordinessControls(); renderStyleGrid(); renderDurationPresets(); renderPauseControls(); renderVoiceGrid(); renderSoundGrid(); updateStudioSummary();
-      if (replay && !chooseVoice) startSession(replayKokoro ? 'kokoro' : undefined);
-      else switchView('script');
+      switchView('script');
       return true;
     }
 
@@ -2343,6 +2448,8 @@
 
     function refreshQuietPlayer() {
       const session = state.session;
+      session.capture?.setRunning(session.active && !session.paused && session.narrationReady &&
+        (session.phase === 'pausing' || (session.phase === 'speaking' && !voicePlayer.paused)));
       const recoveryVisible = document.getElementById('audioRecoveryNotice').classList.contains?.('hidden') === false;
       const quiet = state.view === 'player' && session.active && session.listeningStarted &&
         !recoveryVisible && !['audio-error', 'audio-blocked'].includes(session.phase);
@@ -2369,7 +2476,7 @@
       updateProgressUI();
       const secondsLeft = session.targetSec - session.elapsedSec;
       if (session.phase === 'speaking' && secondsLeft < .8) {
-        voicePlayer.volume = (state.voiceVolume / 100) * Math.max(0, secondsLeft / .8);
+        setVoiceVolume((state.voiceVolume / 100) * Math.max(0, secondsLeft / .8));
       }
       if (session.elapsedSec >= session.targetSec) {
         finishSession();
@@ -2394,6 +2501,7 @@
     async function startSession(mode) {
       const useKokoro = mode === 'kokoro';
       if (useKokoro ? !window.StillnessMembership?.canUseKokoro() : !generationCanStart()) return;
+      void state.session.capture?.finish();
       stopVoicePlayback();
       stopAllSounds(200);
       clearSessionTimers();
@@ -2413,6 +2521,8 @@
         }
       } catch (e) {}
 
+      const capture = (useKokoro || state.serverHostedKey) && sessionLibraryKey()
+        ? window.StillnessAudio?.record?.(voicePlayer) : null;
       primeVoicePlayback();
 
       // Gentle 2.8-second ambient fade-in (NO opening gong)
@@ -2425,6 +2535,7 @@
         fromSavedSession: state.loadedSession?.cacheKey === currentScriptCacheKey(),
         studioNarration: useKokoro || Boolean(state.serverHostedKey),
         narrationMode: useKokoro ? 'kokoro' : undefined,
+        capture,
         chapters: plan.chapters,
         chapterIndex: 0,
         phase: 'fadein',
@@ -2770,6 +2881,7 @@
         let clip;
         if (kokoro) {
           session.phase = 'loading-voice';
+          refreshQuietPlayer();
           let timeout;
           try {
             const pending = kokoro.clip(chapterIndex, currentIndex);
@@ -2946,9 +3058,12 @@
     }
 
     function finishSession() {
-      const settings = state.session.settings || captureSessionSettings();
-      const voiceId = state.session.studioNarration ? settings.voiceId : state.voiceId;
-      state.session.settings = { ...settings, voiceId, narrationMode: state.session.narrationMode, voiceVolume: state.voiceVolume, pausePace: state.pausePace, sounds: JSON.parse(JSON.stringify(state.sounds)) };
+      const session = state.session;
+      const settings = session.settings || captureSessionSettings();
+      const voiceId = session.studioNarration ? settings.voiceId : state.voiceId;
+      session.settings = { ...settings, voiceId, narrationMode: session.narrationMode, voiceVolume: state.voiceVolume, pausePace: state.pausePace, sounds: JSON.parse(JSON.stringify(state.sounds)) };
+      session.recording = session.capture?.finish().catch(() => null);
+      session.capture = null;
       clearSessionTimers();
       stopVoicePlayback();
       state.session.phase = 'done';
@@ -2971,6 +3086,11 @@
       document.getElementById('saveSessionBtn').disabled = false;
       document.getElementById('saveSessionBtn').textContent = 'Save to library';
       document.getElementById('sessionSaveStatus').textContent = '';
+      const download = document.getElementById('downloadSessionBtn');
+      download.hidden = true;
+      void session.recording?.then(recording => {
+        if (session === state.session && sessionLibraryKey()) download.hidden = !recording?.size;
+      });
       savePanel.querySelector?.('h1')?.focus();
       stopAllSounds(4000);
       void window.StillnessMembership?.recordCompletedSession?.();
@@ -3054,6 +3174,7 @@
 
     function endSession() {
       if (state.session.active) { finishSession(); return; }
+      void state.session.capture?.finish();
       clearSessionTimers();
       stopVoicePlayback();
       stopAllSounds(600);
@@ -3097,6 +3218,11 @@
         return;
       }
       const previousView = state.view;
+      if (previousView === 'library' && viewName !== 'library') {
+        libraryViewRevision++;
+        clearLibraryPlayback();
+        document.getElementById('sessionLibraryList').replaceChildren();
+      }
       state.view = viewName;
       document.body.dataset.view = viewName;
       for (const [view, id] of Object.entries({ studio: 'viewStudio', script: 'viewScript', player: 'viewPlayer', library: 'viewLibrary' })) {
@@ -3447,6 +3573,15 @@
       document.getElementById('tabLibraryBtn').addEventListener('click', () => switchView('library'));
       document.getElementById('openLibraryBtn').addEventListener('click', () => switchView('library'));
       document.getElementById('saveSessionBtn').addEventListener('click', saveCompletedSession);
+      document.getElementById('downloadSessionBtn').addEventListener('click', async () => {
+        const key = sessionLibraryKey();
+        const session = state.session;
+        const recording = await session.recording;
+        if (key && key === sessionLibraryKey() && session === state.session && recording?.size) {
+          const title = document.getElementById('sessionSaveTitle').value.trim() || 'Stillness meditation';
+          downloadRecording(recording, title);
+        }
+      });
       document.getElementById('resumeAudioBtn').addEventListener('click', resumeSessionAudio);
       document.getElementById('startDeviceVoiceBtn').addEventListener('click', () => beginStudioAlternative('device'));
       document.getElementById('startSoundscapeBtn').addEventListener('click', () => beginStudioAlternative('soundscape'));
@@ -3495,7 +3630,7 @@
       document.getElementById('voiceVolumeSlider').addEventListener('input', (e) => {
         state.voiceVolume = Number(e.target.value);
         document.getElementById('voiceVolumeVal').textContent = `${state.voiceVolume}%`;
-        voicePlayer.volume = state.voiceVolume / 100;
+        setVoiceVolume(state.voiceVolume / 100);
       });
 
       document.getElementById('liveVoiceVolSlider').addEventListener('input', (e) => {
@@ -3503,7 +3638,7 @@
         document.getElementById('liveVoiceVolVal').textContent = `${state.voiceVolume}%`;
         document.getElementById('voiceVolumeSlider').value = state.voiceVolume;
         document.getElementById('voiceVolumeVal').textContent = `${state.voiceVolume}%`;
-        voicePlayer.volume = state.voiceVolume / 100;
+        setVoiceVolume(state.voiceVolume / 100);
       });
 
       document.getElementById('livePauseMultSlider').addEventListener('input', (e) => {

@@ -126,10 +126,11 @@
   body[data-meditating='true'] #toggleLiveMixerBtn { padding-inline: 18px; }
   .library, .finished { padding-top: clamp(35px, 8vh, 83px); max-width: 620px; padding-bottom: 25px; }
   .library h1, .finished h1 { margin-bottom: 21px; }
-  .saved-row { border-top: 1px solid var(--rule); display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 0; }
+  .saved-row { border-top: 1px solid var(--rule); display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 0; }
   .saved-row:last-child { border-bottom: 1px solid var(--rule); }
   .saved-row h2 { overflow-wrap: anywhere; font-size: 25px; }
   .saved-row p, .library > p, .finished p { color: var(--soft); }
+  .saved-row audio { width: 100%; color-scheme: dark; }
   .finish-actions { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; margin-top: 25px; }
   dialog {
     color: var(--ink); background: #38271f; width: min(490px, calc(100% - 30px)); max-height: 85dvh; overflow: auto;
