@@ -512,30 +512,34 @@ for (const path of ['../index.html', '../public/index.html']) {
     assert.equal(p.run('typeof voicePlayer.onended'), 'function');
   });
 
-  test(`${path}: previewing a voice selects it for the meditation`, async () => {
+  test(`${path}: a prerecorded preview is available with no minutes and selects the voice`, async () => {
     const requests = [];
-    const p = page(path, async (url, options) => {
-      requests.push(JSON.parse(options.body));
-      return new Response(JSON.stringify({ data: 'JULIAN', mimeType: 'audio/wav' }));
+    const p = page(path, async url => {
+      requests.push(url);
+      return new Response('{}', { status: 402 });
     });
+    p.run(`window.StillnessMembership = {
+      canGenerate: () => false,
+      openGenerationProfile: () => { throw new Error('Playing a recording does not require minutes'); }
+    };`);
     await p.run('toggleVoicePreview("julian")');
     assert.equal(p.run('state.voiceId'), 'julian');
-    assert.equal(requests[0].voiceName, 'Algieba');
+    assert.equal(p.elements.get('voicePlayer').src, '/audio/voice-previews/julian.mp3');
+    assert.deepEqual(requests, []);
     assert.match(p.elements.get('setupVoiceValue').textContent, /Julian/);
   });
 
-  test(`${path}: a late preview cannot replace the most recently chosen voice`, async () => {
-    const pending = new Map();
-    const p = page(path, (url, options) => new Promise(resolve => {
-      pending.set(JSON.parse(options.body).voiceName, resolve);
-    }));
+  test(`${path}: an interrupted preview cannot clear the most recently chosen voice`, async () => {
+    const p = page(path, async () => new Response('{}', { status: 500 }));
+    p.run(`var failClara;
+      voicePlayer.play = () => voicePlayer.src.endsWith('/clara.mp3')
+        ? new Promise((resolve, reject) => { failClara = reject; }) : Promise.resolve();`);
     const first = p.run('toggleVoicePreview("clara")');
-    const second = p.run('toggleVoicePreview("julian")');
-    pending.get('Algieba')(new Response(JSON.stringify({ data: 'JULIAN', mimeType: 'audio/wav' })));
-    await second;
-    pending.get('Vindemiatrix')(new Response(JSON.stringify({ data: 'CLARA', mimeType: 'audio/wav' })));
+    await p.run('toggleVoicePreview("julian")');
+    assert.equal(p.run('typeof failClara'), 'function');
+    p.run('failClara(new Error("Playback interrupted"))');
     await first;
-    assert.equal(p.elements.get('voicePlayer').src, 'data:audio/wav;base64,JULIAN');
+    assert.equal(p.elements.get('voicePlayer').src, '/audio/voice-previews/julian.mp3');
     assert.equal(p.run('state.previewingVoiceId'), 'julian');
   });
 
@@ -597,8 +601,8 @@ for (const path of ['../index.html', '../public/index.html']) {
     assert.equal(p.elements.get('voicePlayer').src, 'data:audio/wav;base64,AAAA');
     const before = requests.length;
     await p.run('toggleVoicePreview("clara")');
-    assert.equal(requests.length, before + 1);
-    assert.equal(requests.at(-1).url, '/api/tts');
+    assert.equal(requests.length, before);
+    assert.equal(p.elements.get('voicePlayer').src, '/audio/voice-previews/clara.mp3');
   });
 
   test(`${path}: an unavailable hosted voice falls back without requesting visitor credentials`, async () => {
