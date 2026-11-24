@@ -126,10 +126,20 @@
   body[data-meditating='true'] #toggleLiveMixerBtn { padding-inline: 18px; }
   .library, .finished { padding-top: clamp(35px, 8vh, 83px); max-width: 620px; padding-bottom: 25px; }
   .library h1, .finished h1 { margin-bottom: 21px; }
-  .saved-row { border-top: 1px solid var(--rule); display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 0; }
+  .library-guide { border-left: 2px solid var(--gold); background: #2b1b15a0; padding: 13px 16px; margin-bottom: 25px; }
+  .library-guide strong { color: var(--ink); }
+  .library-guide p + p { margin-top: 5px; color: var(--soft); }
+  .library-empty { color: var(--soft); padding: 14px 0; }
+  .library-shortcut { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 12px; margin-top: 4px; }
+  .library-shortcut .text-action { font-weight: 650; }
+  .library-shortcut span { color: var(--soft); font-size: 13px; }
+  .saved-row { border-top: 1px solid var(--rule); display: grid; gap: 10px; padding: 18px 0 12px; }
   .saved-row:last-child { border-bottom: 1px solid var(--rule); }
   .saved-row h2 { overflow-wrap: anywhere; font-size: 25px; }
   .saved-row p, .library > p, .finished p { color: var(--soft); }
+  .recording-actions { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+  .recording-actions button { min-height: 44px; padding-inline: 14px; }
+  .recording-actions .text-action { border: 1px solid var(--rule); border-radius: 28px; }
   .saved-row audio { width: 100%; color-scheme: dark; }
   .finish-actions { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; margin-top: 25px; }
   dialog {
@@ -191,10 +201,9 @@
   .fader input, .sound-row input { min-height: 42px; }
   details { border-top: 1px solid var(--rule); margin-top: 12px; }
   summary { cursor: pointer; padding: 13px 0; color: var(--gold); }
-  .saved-row { display: block; }
   .saved-row h2 { margin-bottom: 5px; }
   .saved-row p { overflow-wrap: anywhere; }
-  .saved-row .text-action:first-child { padding-left: 0; }
+  .saved-row .choice-group .text-action:first-child { padding-left: 0; }
   .transcript { max-width: 490px; align-self: center; padding-bottom: 12px; }
   .session-progress { width: min(420px, 100%); height: 2px; background: var(--rule); margin: 8px auto 17px; }
   #sessionProgressBar { width: 0; height: 100%; background: var(--gold); }

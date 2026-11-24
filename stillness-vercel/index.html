@@ -254,6 +254,10 @@
       </button>
       <button class="main-button start" id="beginMeditationBtn" type="button" disabled>Begin meditation <span aria-hidden="true">→</span></button>
       <p id="membershipAllowance"></p>
+      <div class="library-shortcut" data-library-shortcut hidden>
+        <button class="text-action member-inline" type="button" data-open-recordings>Replay saved recordings</button>
+        <span>0 voice minutes</span>
+      </div>
       <div id="membershipStudioOptions" class="member-voice-options" hidden>
         <button class="main-button" data-start-kokoro type="button">Use Kokoro Heart · Free</button>
         <button class="text-action" data-buy-voice-time type="button">Buy 60 minutes · $4.99</button>
@@ -306,7 +310,10 @@
 
     <section id="viewLibrary" class="library hidden">
       <h1 tabindex="-1">Your library</h1>
-      <p class="member-detail">Recordings are saved on this device. Replay or download them anytime while you have library access. Both use zero narration minutes.</p>
+      <div class="library-guide">
+        <p><strong>Replay and download use zero voice minutes.</strong></p>
+        <p>Listen to saved recordings here even when your balance is 0. Download an audio file to listen offline.</p>
+      </div>
       <div id="sessionLibraryList"></div>
     </section>
 
@@ -318,6 +325,10 @@
         <button id="membershipScriptProfile" class="text-action" data-member-profile type="button" hidden>Open membership settings</button>
         <button id="aiRewriteScriptBtn" class="text-action hidden" type="button">Rewrite script</button>
         <button id="regenerateScriptBtn" class="text-action" type="button">New variation</button>
+      </div>
+      <div class="library-shortcut" data-library-shortcut hidden>
+        <button class="text-action member-inline" type="button" data-open-recordings>Replay saved recordings</button>
+        <span>0 voice minutes</span>
       </div>
       <div id="membershipScriptOptions" class="member-voice-options" hidden>
         <p id="membershipScriptVoiceBalance" class="notice">You’ve used your premium narration minutes.</p>
@@ -2209,17 +2220,19 @@
         return `<article class="saved-row">
           <div>
             <h2>${escapeText(entry.title)}</h2>
-            <p>${entry.library ? `${escapeText(style)} · ${escapeText(voice)} · ${formatTime(entry.totalEstSec)}` : 'Saved script'}</p>
+            <p>${entry.library ? `${escapeText(style)} · ${escapeText(voice)} · ${formatTime(entry.totalEstSec)}` : 'Script only. Start a new meditation to record audio.'}</p>
           </div>
+          ${entry.library ? `<div class="recording-actions">
+            <button type="button" data-replay-session="${escapeText(entry.id)}" class="main-button">Replay recording</button>
+            <button type="button" data-download-session="${escapeText(entry.id)}" class="text-action">Download audio</button>
+          </div>
+          <audio controls playsinline preload="none" aria-label="${escapeText(entry.title)} recording" hidden></audio>` : ''}
           <div class="choice-group">
-            ${entry.library ? `<button type="button" data-replay-session="${escapeText(entry.id)}" class="text-action">Replay</button>
-            <button type="button" data-download-session="${escapeText(entry.id)}" class="text-action">Download</button>` : ''}
             <button type="button" data-review-session="${escapeText(entry.id)}" class="text-action">Read script</button>
             <button type="button" data-delete-session="${escapeText(entry.id)}" class="text-action">Delete</button>
           </div>
-          ${entry.library ? `<audio controls playsinline preload="none" aria-label="${escapeText(entry.title)} recording" hidden></audio>` : ''}
         </article>`;
-      }).join('') : '<p>Finished sessions you save will appear here.</p>';
+      }).join('') : '<p class="library-empty">After your next meditation, tap <strong>Save to library</strong> to keep the audio on this device.</p>';
       const lookup = new Map(entries.map(entry => [entry.id, entry]));
       list.querySelectorAll('[data-replay-session]').forEach(btn => btn.addEventListener('click', () => {
         void useSavedRecording(key, lookup.get(btn.dataset.replaySession), btn.closest('article').querySelector('audio'));
@@ -3571,6 +3584,9 @@
     function init() {
       detectServerBackend();
       document.getElementById('tabLibraryBtn').addEventListener('click', () => switchView('library'));
+      for (const button of document.querySelectorAll('[data-open-recordings]')) {
+        button.addEventListener('click', () => switchView('library'));
+      }
       document.getElementById('openLibraryBtn').addEventListener('click', () => switchView('library'));
       document.getElementById('saveSessionBtn').addEventListener('click', saveCompletedSession);
       document.getElementById('downloadSessionBtn').addEventListener('click', async () => {

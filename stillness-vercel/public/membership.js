@@ -171,6 +171,7 @@
     const member = snapshot.member;
     const problem = generationProblem();
     const outOfPremium = hasPaidNarration(member) && remainingSeconds(member) <= 0;
+    const canReplayWithoutMinutes = Boolean(libraryKey()) && remainingSeconds(member) <= 0;
     const kokoro = canUseKokoro();
     text('membershipGreeting', accountGreeting(member));
     text('membershipAllowance', outOfPremium ? kokoro
@@ -188,6 +189,9 @@
     text('membershipScriptVoiceBalance', byId('membershipAllowance').textContent);
     for (const button of document.querySelectorAll('[data-start-kokoro]')) {
       button.hidden = !kokoro;
+    }
+    for (const shortcut of document.querySelectorAll('[data-library-shortcut]')) {
+      shortcut.hidden = !canReplayWithoutMinutes;
     }
     if (!canUseKokoro()) reveal('membershipPlayerOptions', false);
     reveal('membershipStudioProfile', !outOfPremium && Boolean(problem) && Boolean(snapshot.user));
