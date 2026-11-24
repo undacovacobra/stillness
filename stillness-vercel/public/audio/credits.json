@@ -12,10 +12,10 @@
       "license_url": "https://creativecommons.org/licenses/by/4.0/",
       "adaptation_license": "CC BY 4.0",
       "accessed": "2026-11-20",
-      "changes": "Excerpt beginning at 8s, 33s requested; 2s linear overlap crossfade for looping; 5 ms edge fades; loudness adjustment targeted at -27 LUFS / -6 dBTP; re-encoded as MP3.",
+      "changes": "Excerpt beginning at 64.875s, 35s long, with a 4s equal-power overlap selected for smooth looping. Applied constant gain and encoded as MP3.",
       "duration_seconds": 31.0,
-      "bytes": 513884,
-      "sha256": "a5b75caa501741e4ea191392e2a6e294faa16e6c11eb89a9fdb213d0e6807436"
+      "bytes": 517240,
+      "sha256": "9b822f7637ddd3d22406c372014de52530953ed08210a8836d613b7fc9333c5c"
     },
     {
       "id": "crickets",
@@ -28,10 +28,10 @@
       "license_url": "https://creativecommons.org/licenses/by/4.0/",
       "adaptation_license": "CC BY 4.0",
       "accessed": "2026-11-20",
-      "changes": "Excerpt beginning at 3s, 33s requested; 2s linear overlap crossfade for looping; 5 ms edge fades; loudness adjustment targeted at -27 LUFS / -6 dBTP; re-encoded as MP3.",
+      "changes": "Excerpt beginning at 15.125s, 33s long, with a 2s equal-power overlap selected for smooth looping. Applied constant gain and encoded as MP3.",
       "duration_seconds": 31.0,
-      "bytes": 497871,
-      "sha256": "8c74074b4ed0f420c4d7b88fbac616bb3d2d6ba4cd614fd58c6d523810dca4d3"
+      "bytes": 494522,
+      "sha256": "9e99e59d464d9fab9f7c9f8e40c90dd15e08ad22fe8085756161746f12b96e66"
     },
     {
       "id": "rain",
@@ -44,10 +44,10 @@
       "license_url": "http://creativecommons.org/publicdomain/zero/1.0/",
       "adaptation_license": "CC0 1.0",
       "accessed": "2026-11-20",
-      "changes": "Excerpt beginning at 5s, 33s requested; 2s linear overlap crossfade for looping; 5 ms edge fades; loudness adjustment targeted at -27 LUFS / -6 dBTP; re-encoded as MP3.",
+      "changes": "Excerpt beginning at 25.375s, 34s long, with a 3s equal-power overlap selected for smooth looping. Applied constant gain and encoded as MP3.",
       "duration_seconds": 31.0,
-      "bytes": 600957,
-      "sha256": "568d53ccca3b385eea50ba3642621c2c13dc2b8a6dd134e81c0f150d452c10ca"
+      "bytes": 583679,
+      "sha256": "bc070dd11fd6dd9030ea7a95f67514242f5568efebf69bafe8d120421ebe85e6"
     },
     {
       "id": "forest",
@@ -60,10 +60,10 @@
       "license_url": "http://creativecommons.org/publicdomain/zero/1.0/",
       "adaptation_license": "CC0 1.0",
       "accessed": "2026-11-20",
-      "changes": "Excerpt beginning at 0s, 27.051s requested; original authored seamless loop retained; 5 ms edge fades; loudness adjustment targeted at -27 LUFS / -6 dBTP; re-encoded as MP3.",
-      "duration_seconds": 27.051,
-      "bytes": 428400,
-      "sha256": "3f150e1ce42c229276acf72b874eeab681e8ca09ebd7e524ffb61d39c271ebe5"
+      "changes": "Excerpt beginning at 0s, 26s long, with a 2s equal-power overlap selected for smooth looping. Applied constant gain and encoded as MP3.",
+      "duration_seconds": 24.0,
+      "bytes": 375675,
+      "sha256": "9eaa94793a5f0b0ced2b48ad8503b6000997ff45ebbd15316f9befa93fc99c96"
     },
     {
       "id": "fire",
@@ -76,10 +76,10 @@
       "license_url": "https://creativecommons.org/licenses/by/4.0/",
       "adaptation_license": "CC BY 4.0",
       "accessed": "2026-11-20",
-      "changes": "Excerpt beginning at 10s, 33s requested; 2s linear overlap crossfade for looping; 5 ms edge fades; loudness adjustment targeted at -27 LUFS / -6 dBTP; re-encoded as MP3.",
+      "changes": "Excerpt beginning at 23.875s, 33s long, with a 2s equal-power overlap selected for smooth looping. Applied constant gain and encoded as MP3.",
       "duration_seconds": 31.0,
-      "bytes": 346212,
-      "sha256": "e0f32de10b17e6403436f89f5dacc5fa5a6189d5189dc3b82447dcf682237f43"
+      "bytes": 300576,
+      "sha256": "17e89d2b6269553fd0d8067c9a1ec5dcc2c578bda7deb46119f06fdd11573879"
     },
     {
       "id": "stream",
@@ -92,10 +92,10 @@
       "license_url": "http://creativecommons.org/publicdomain/zero/1.0/",
       "adaptation_license": "CC0 1.0",
       "accessed": "2026-11-20",
-      "changes": "Excerpt beginning at 0s, 22.662s requested; 1.5s linear overlap crossfade for looping; 5 ms edge fades; loudness adjustment targeted at -27 LUFS / -6 dBTP; re-encoded as MP3.",
-      "duration_seconds": 21.162,
-      "bytes": 407872,
-      "sha256": "5a877aa01599cab8dd33797dac133164672cbdf3c934afbd6aec5a88fc851d3a"
+      "changes": "Excerpt beginning at 0.5s, 21.5s long, with a 2.5s equal-power overlap selected for smooth looping. Applied constant gain and encoded as MP3.",
+      "duration_seconds": 19.0,
+      "bytes": 358981,
+      "sha256": "266293ab72615082fa760b4b3467d918cf3ce18dbc72ef161686756b5565ac34"
     },
     {
       "id": "bowl",
@@ -108,10 +108,10 @@
       "license_url": "http://creativecommons.org/publicdomain/zero/1.0/",
       "adaptation_license": "CC0 1.0",
       "accessed": "2026-11-20",
-      "changes": "Excerpt beginning at 24s, 33s requested; 3s linear overlap crossfade for looping; 5 ms edge fades; loudness adjustment targeted at -27 LUFS / -6 dBTP; re-encoded as MP3.",
+      "changes": "Excerpt beginning at 18.75s, 34s long, with a 4s equal-power overlap selected for smooth looping. Applied constant gain and encoded as MP3.",
       "duration_seconds": 30.0,
-      "bytes": 291080,
-      "sha256": "3d3e38a0d559c377a6ff8f54fd0320f353c2e8d2f52eaf973845019ad97dfe68"
+      "bytes": 221236,
+      "sha256": "c9743d5b2d5d84ff704bf553d8d43a844a8132c4a8bfa16dacbe6fd4795d4484"
     }
   ]
 }
