@@ -39,7 +39,9 @@ test('two ambient layers share one output and remain active together', async () 
   await Promise.all([first, second]);
   assert.equal(contexts[0].sources.filter(s => s.active && s.loop).length, 2);
   assert.equal(ocean.paused, false); assert.equal(rain.paused, false);
-  assert.ok(contexts[0].gains.every(g => g.output === contexts[0].destination));
+  const mix = contexts[0].gains.find(gain => gain.output === contexts[0].destination);
+  assert.ok(mix);
+  assert.ok(contexts[0].sources.every(source => source.output.output === mix));
 });
 
 test('concurrent play and repeated play never duplicate or restart a layer', async () => {

@@ -3,11 +3,68 @@
   const Context = window.AudioContext || window.webkitAudioContext;
   const buffers = new Map();
   let context;
+  let output;
+  let voice;
+  let voiceGain;
 
   function getContext() {
     if (!Context) throw new Error('Web Audio is unavailable.');
     if (!context) context = new Context();
     return context;
+  }
+
+  function getOutput() {
+    if (!output) {
+      const audio = getContext();
+      output = audio.createGain();
+      output.connect(audio.destination);
+    }
+    return output;
+  }
+
+  function setVoiceVolume(element, volume) {
+    if (voice === element) voiceGain.gain.value = volume;
+    else element.volume = volume;
+  }
+
+  function playVoice(element) {
+    if (voice !== element) return element.play();
+    return Promise.all([unlock(), element.play()]);
+  }
+
+  function record(element) {
+    if (!Context || !window.MediaRecorder) return null;
+    try {
+      const audio = getContext();
+      const mix = getOutput();
+      const tap = audio.createMediaStreamDestination();
+      const recorder = window.StillnessRecordings.capture(tap.stream);
+      if (!voice) {
+        const gain = audio.createGain();
+        gain.gain.value = element.volume;
+        gain.connect(mix);
+        audio.createMediaElementSource(element).connect(gain);
+        voice = element;
+        voiceGain = gain;
+        element.volume = 1;
+      }
+      mix.connect(tap);
+      let recording;
+      return {
+        setRunning: running => recorder.setRunning(running),
+        finish() {
+          if (!recording) {
+            recording = recorder.finish().finally(() => {
+              mix.disconnect(tap);
+              tap.stream.getTracks().forEach(track => track.stop());
+            });
+          }
+          return recording;
+        }
+      };
+    } catch {
+      return null;
+    }
   }
 
   function blocked() {
@@ -81,7 +138,7 @@
         buffer = decoded;
         if (!gain) {
           gain = audio.createGain();
-          gain.connect(audio.destination);
+          gain.connect(getOutput());
         }
         gain.gain.value = volume;
         const next = audio.createBufferSource();
@@ -136,5 +193,5 @@
     return adapter;
   }
 
-  window.StillnessAudio = { supported: Boolean(Context), createSound, unlock };
+  window.StillnessAudio = { supported: Boolean(Context), createSound, unlock, record, playVoice, setVoiceVolume };
 })();
