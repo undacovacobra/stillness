@@ -14,6 +14,7 @@
   <meta property="og:image" content="https://i.ytimg.com/vi/gsect3LI2xQ/hqdefault.jpg">
   <link rel="stylesheet" href="/design/welcome.css">
   <link rel="stylesheet" href="/design/meditation.css">
+  <script type="module" src="/share-practice.js"></script>
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -48,7 +49,14 @@
         referrerpolicy="strict-origin-when-cross-origin"
         allowfullscreen></iframe>
     </div>
-    <a class="watch-external" href="https://www.youtube.com/watch?v=gsect3LI2xQ">Watch on YouTube <span aria-hidden="true">↗</span></a>
+    <div class="watch-actions">
+      <a class="watch-external" href="https://www.youtube.com/watch?v=gsect3LI2xQ">Watch on YouTube <span aria-hidden="true">↗</span></a>
+      <div class="watch-share" data-share-practice hidden>
+        <button type="button">Share this meditation <span aria-hidden="true">↗</span></button>
+        <input type="url" aria-label="Link to this meditation" readonly hidden>
+        <span role="status"></span>
+      </div>
+    </div>
 
     <section class="trial watch-trial" aria-labelledby="watch-trial-heading">
       <div>
@@ -74,6 +82,7 @@
       <p>As the sounds grow quieter, let the space between my words widen. You can drift, or you can stay just as you are. Let the night take its own pace.</p>
       <p>From here, there is nothing more to follow. Let your body be as heavy as it wants to be. Whenever you are ready, allow yourself to drift.</p>
     </details>
+    <a class="watch-external" href="/meditations/after-work-reset">Try the 5-minute after-work meditation <span aria-hidden="true">↗</span></a>
   </main>
 
   <footer class="site-footer wrap">
