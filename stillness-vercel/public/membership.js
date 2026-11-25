@@ -38,6 +38,8 @@
   let ownerOffset = null;
   let ownerSearch = '';
   let ownerMemberLoad = 0;
+  let ownerActivityBefore = null;
+  let ownerActivityLoad = 0;
   let ownerTemplates = [];
   let profileRequested = false;
 
@@ -638,7 +640,8 @@
             <label>Available Gemini credits (USD)
               <input id="memberAdminCreditBalance" type="number" min="0" max="10000" step="0.01" required>
             </label>
-            <p class="member-detail">Enter the balance shown in <a href="https://aistudio.google.com/billing" target="_blank" rel="noopener noreferrer">Google AI Studio</a> after a top-up. Stillness estimates the balance between updates.</p>
+            <a id="memberAdminGeminiBilling" class="text-action member-inline" href="https://aistudio.google.com/projects" target="_blank" rel="noopener noreferrer">View live Gemini balance ↗</a>
+            <p class="member-detail">Use the Stillness Google account to see the prepaid balance or add credits. Enter the balance shown by Google after a top-up. Stillness estimates the balance between updates.</p>
             <button type="submit" class="main-button">Save balance</button>
           </form>
           <button id="memberAdminAlertTest" class="text-action member-inline" type="button">Send test email</button>
@@ -661,18 +664,25 @@
     const emails = section === 'email';
     const users = section === 'users';
     const alerts = section === 'alerts';
+    const publishing = section === 'publishing';
     byId('memberAdminUsersTab').setAttribute('aria-pressed', String(users));
     byId('memberAdminEmailTab').setAttribute('aria-pressed', String(emails));
     byId('memberAdminAlertsTab').setAttribute('aria-pressed', String(alerts));
+    byId('memberAdminPublishingTab').setAttribute('aria-pressed', String(publishing));
     reveal('memberAdminUsers', users);
     reveal('memberAdminEmail', emails);
     reveal('memberAdminAlerts', alerts);
+    reveal('memberAdminPublishing', publishing);
     if (alerts) {
       await ownerAlertAction();
       return;
     }
     if (users) {
       await searchOwnerMembers();
+      return;
+    }
+    if (publishing) {
+      await loadOwnerActivity(true);
       return;
     }
     text('memberAdminEmailFeedback', 'Loading emails…');
@@ -704,6 +714,9 @@
         ? await apiRequest(accountPath, body)
         : await apiRequest(accountPath + '?view=admin-alerts');
       if (!snapshot.owner || visiblePage !== 'admin') return;
+      if (typeof result.billingUrl === 'string' && result.billingUrl.startsWith('https://aistudio.google.com/')) {
+        byId('memberAdminGeminiBilling').href = result.billingUrl;
+      }
       if (result.credit) {
         const credit = result.credit;
         const money = cents => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
@@ -727,6 +740,60 @@
     ownerSearch = byId('memberAdminSearch').value.trim();
     byId('memberAdminList').replaceChildren();
     await loadOwnerMembers(true);
+  }
+
+  async function loadOwnerActivity(reset = false) {
+    const button = byId('memberAdminPublishingMore');
+    const panel = byId('memberAdminPublishing');
+    if (!snapshot.owner || panel.hidden || (!reset && (button.disabled || ownerActivityBefore === null))) return;
+    const load = ++ownerActivityLoad;
+    const list = byId('memberAdminPublishingList');
+    if (reset) {
+      ownerActivityBefore = null;
+      list.replaceChildren();
+    }
+    button.disabled = true;
+    reveal('memberAdminPublishingMore', false);
+    text('memberAdminPublishingStatus', 'Loading activity…');
+    try {
+      const before = ownerActivityBefore === null ? '' : '&before=' + ownerActivityBefore;
+      const { entries, nextBefore } = await apiRequest(accountPath + '?view=admin-activity' + before);
+      if (load !== ownerActivityLoad || !snapshot.owner || visiblePage !== 'admin' || panel.hidden) return;
+      ownerActivityBefore = Number.isSafeInteger(nextBefore) ? nextBefore : null;
+      for (const entry of entries) {
+        const row = document.createElement('article');
+        row.className = 'member-admin-row';
+        const heading = document.createElement('h3');
+        heading.textContent = entry.title;
+        if (typeof entry.url === 'string' && entry.url.startsWith('https://')) {
+          const link = document.createElement('a');
+          link.href = entry.url;
+          link.rel = 'noopener noreferrer';
+          link.target = '_blank';
+          link.textContent = entry.title + ' ↗';
+          heading.replaceChildren(link);
+        }
+        const meta = document.createElement('p');
+        const stamp = document.createElement('time');
+        const date = new Date(entry.occurred_at);
+        stamp.dateTime = entry.time_known ? date.toISOString() : date.toISOString().slice(0, 10);
+        stamp.textContent = entry.time_known
+          ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+          : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' }).format(date);
+        if (!entry.time_known) stamp.title = 'Exact time unavailable';
+        meta.append(entry.platform + ' · ' + entry.action + ' · ', stamp);
+        row.append(heading, meta);
+        list.append(row);
+      }
+      text('memberAdminPublishingStatus', list.childElementCount ? '' : 'No publishing activity yet.');
+    } catch (error) {
+      if (load === ownerActivityLoad) text('memberAdminPublishingStatus', error.message);
+    } finally {
+      if (load === ownerActivityLoad) {
+        button.disabled = false;
+        reveal('memberAdminPublishingMore', ownerActivityBefore !== null && snapshot.owner && !panel.hidden);
+      }
+    }
   }
 
   async function loadOwnerMembers(replace = false) {
@@ -831,6 +898,7 @@
       if (action === 'preview') {
         text('memberAdminPreviewSubject', result.preview.subject);
         text('memberAdminPreviewText', result.preview.text);
+        byId('memberAdminPreviewFrame').srcdoc = result.preview.html;
         reveal('memberAdminPreviewPanel', true);
         return;
       }
@@ -977,6 +1045,8 @@
     byId('memberAdminSearchForm').addEventListener('submit', searchOwnerMembers);
     byId('memberAdminUsersTab').addEventListener('click', () => showAdminSection('users'));
     byId('memberAdminEmailTab').addEventListener('click', () => showAdminSection('email'));
+    byId('memberAdminPublishingTab').addEventListener('click', () => showAdminSection('publishing'));
+    byId('memberAdminPublishingMore').addEventListener('click', () => loadOwnerActivity());
     byId('memberAdminTemplate').addEventListener('change', renderOwnerTemplate);
     byId('memberAdminEmailForm').addEventListener('submit', event => {
       event.preventDefault();

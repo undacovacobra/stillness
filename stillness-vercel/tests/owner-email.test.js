@@ -46,17 +46,18 @@ test('an ordinary verified member and an unverified owner cannot use admin email
     assert.equal(String(url), 'https://database.example.com/auth/v1/user');
     return Response.json(auth);
   });
-  async function run(method, action) {
+  async function run(method, action, view = 'admin-email') {
     const req = { method, headers: {
       host: 'stillness.example.com', origin: 'https://stillness.example.com',
       cookie: 'stillness_access=mock', 'content-type': 'application/json',
     },
-      query: { view: 'admin-email' }, body: { action, kind: 'welcome', subject: 'Test', body: 'Hi' } };
+      query: { view }, body: { action, kind: 'welcome', subject: 'Test', body: 'Hi' } };
     const res = { setHeader() {}, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } };
     await account(req, res);
     return res;
   }
   assert.equal((await run('GET')).code, 403);
+  assert.equal((await run('GET', undefined, 'admin-activity')).code, 403);
   assert.equal((await run('POST', 'admin-email-save')).code, 403);
   auth = { ...auth, email: 'owner@example.com', email_confirmed_at: null };
   assert.equal((await run('POST', 'admin-email-preview')).code, 401);
@@ -64,5 +65,5 @@ test('an ordinary verified member and an unverified owner cannot use admin email
   const result = await run('POST', 'admin-email-preview');
   assert.equal(result.code, 200);
   assert.equal(result.body.preview.subject, 'Test');
-  assert.equal(requests.length, 4);
+  assert.equal(requests.length, 5);
 });

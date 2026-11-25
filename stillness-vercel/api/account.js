@@ -5,11 +5,11 @@ import {
   fail, hasRecovery, isVerified, ownerAccount, pkce, readCookie, requireSameOrigin,
   setMemberSession, setRecovery, writeCookie
 } from '../lib/member-auth.js';
-import { getAdminEmail, getMember, listMembers, queueOwnerAlert, recordMarketingMilestone, saveCreditBalance, saveEmailTemplate, saveProfile, setEmailPreference, startFreeTrial } from '../lib/member-store.js';
+import { getAdminEmail, getMember, listAdminActivity, listMembers, queueOwnerAlert, recordMarketingMilestone, saveCreditBalance, saveEmailTemplate, saveProfile, setEmailPreference, startFreeTrial } from '../lib/member-store.js';
 import { trialIdentifiers } from '../lib/member-trial.js';
 import { deliverTrialEmails, emailConfig } from '../lib/trial-email.js';
 import { knownEmailTemplate, listEmailTemplates, previewEmailTemplate, validateEmailTemplate } from '../lib/trial-email-templates.js';
-import { backgroundOwnerAlert, checkOwnerCredit, deliverOwnerAlerts, ownerAlertConfig } from '../lib/owner-alerts.js';
+import { backgroundOwnerAlert, checkOwnerCredit, deliverOwnerAlerts, geminiBillingUrl, ownerAlertConfig } from '../lib/owner-alerts.js';
 
 const signedOut = { user: null };
 const recoveryAccessCookie = 'stillness_recovery_access';
@@ -39,7 +39,7 @@ async function ownerAlerts(res, user, action, cents) {
   if (action === 'admin-credit-save' && config && credit.shortfall) {
     backgroundOwnerAlert(() => deliverOwnerAlerts({ config, id: 'credit/' + now.toISOString().slice(0, 10) }));
   }
-  return res.status(200).json({ credit, email: config?.to || null });
+  return res.status(200).json({ credit, email: config?.to || null, billingUrl: geminiBillingUrl() });
 }
 
 async function adminEmailOverview(res) {
@@ -330,6 +330,18 @@ export default async function handler(req, res) {
       if (req.query?.view === 'admin-email') {
         if (!session || session.recovery || !ownerAccount(session.user)) return fail(res, 403, 'Owner access only.');
         return await adminEmailOverview(res);
+      }
+      if (req.query?.view === 'admin-activity') {
+        if (!session || session.recovery || !ownerAccount(session.user)) return fail(res, 403, 'Owner access only.');
+        const raw = req.query.before;
+        const before = raw === undefined ? null : Number(raw);
+        if (raw !== undefined && (typeof raw !== 'string' || !/^\d+$/.test(raw) ||
+            !Number.isSafeInteger(before) || before < 1)) {
+          return fail(res, 400, 'That activity page link is invalid.');
+        }
+        const rows = await listAdminActivity(before);
+        const entries = rows.slice(0, 50);
+        return res.status(200).json({ entries, nextBefore: rows.length > entries.length ? entries.at(-1).id : null });
       }
       if (req.query?.view === 'admin-alerts') {
         if (!session || session.recovery) return fail(res, 403, 'Owner access only.');

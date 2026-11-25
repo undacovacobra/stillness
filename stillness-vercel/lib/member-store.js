@@ -72,6 +72,10 @@ export function getAdminEmail() {
   return membershipRpc('stillness_admin_email', {});
 }
 
+export function listAdminActivity(beforeId) {
+  return membershipRpc('stillness_list_admin_activity', { p_before_id: beforeId });
+}
+
 export function queueOwnerAlert({ id, kind, details = {} }) {
   return membershipRpc('stillness_queue_owner_alert', { p_id: id, p_kind: kind, p_details: details });
 }

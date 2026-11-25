@@ -180,6 +180,7 @@
         <div class="member-actions admin-navigation" aria-label="Admin sections">
           <button id="memberAdminUsersTab" type="button" class="text-action" aria-controls="memberAdminUsers" aria-pressed="true">Members</button>
           <button id="memberAdminEmailTab" type="button" class="text-action" aria-controls="memberAdminEmail" aria-pressed="false">Emails</button>
+          <button id="memberAdminPublishingTab" type="button" class="text-action" aria-controls="memberAdminPublishing" aria-pressed="false">Activity</button>
         </div>
         <section id="memberAdminUsers" aria-label="Members">
           <form id="memberAdminSearchForm" class="member-form admin-search">
@@ -191,6 +192,12 @@
           <p id="memberAdminFeedback" class="member-lede" role="status"></p>
           <div id="memberAdminList"></div>
           <button id="memberAdminMore" class="text-action member-inline" type="button" hidden>Load more members</button>
+        </section>
+        <section id="memberAdminPublishing" aria-label="Activity" hidden>
+          <h2>Publishing and outreach</h2>
+          <p id="memberAdminPublishingStatus" class="member-detail" role="status"></p>
+          <div id="memberAdminPublishingList" class="admin-publishing-list"></div>
+          <button id="memberAdminPublishingMore" class="text-action member-inline" type="button" hidden>Load older activity</button>
         </section>
         <section id="memberAdminEmail" aria-label="Emails" hidden>
           <p id="memberAdminEmailStatus" class="member-detail" role="status"></p>
@@ -219,7 +226,11 @@
           <section id="memberAdminPreviewPanel" class="member-profile-section" aria-labelledby="memberAdminPreviewTitle" hidden>
             <h2 id="memberAdminPreviewTitle">Preview</h2>
             <p id="memberAdminPreviewSubject" class="admin-preview-subject"></p>
-            <pre id="memberAdminPreviewText" class="admin-email-preview"></pre>
+            <iframe id="memberAdminPreviewFrame" class="admin-email-frame" title="Formatted Stillness email" sandbox></iframe>
+            <details>
+              <summary>Plain text version</summary>
+              <pre id="memberAdminPreviewText" class="admin-email-preview"></pre>
+            </details>
           </section>
           <section class="member-profile-section" id="memberAdminActivity" aria-labelledby="memberAdminActivityTitle" hidden>
             <h2 id="memberAdminActivityTitle">Recent activity</h2>

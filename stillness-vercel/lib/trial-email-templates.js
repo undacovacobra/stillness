@@ -1,3 +1,5 @@
+import { brandedEmail } from './branded-email.js';
+
 const dateFormat = new Intl.DateTimeFormat('en-US', {
   dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC',
 });
@@ -6,19 +8,19 @@ const templates = {
   welcome: {
     label: 'Welcome', when: 'After a verified signup if the trial hasn’t started',
     subject: 'Welcome to Stillness',
-    body: 'When you’re ready, set aside a few quiet minutes. Start your free trial in Stillness.\n{{app_url}}',
+    body: 'Take a few minutes for whatever’s on your mind. Tell Stillness what you need today, then choose how long you’d like to sit.\n\nYour free trial is ready when you are. No card is needed.\n{{app_url}}',
     variables: ['app_url'],
   },
   started: {
     label: 'Trial started', when: 'When a member starts the free trial',
     subject: 'Your Stillness trial has started',
-    body: 'You have 15 narrated minutes over 10 days. Your trial ends on {{trial_end}}. No card is needed and you won’t be charged automatically.\n\nStart a session\n{{app_url}}',
+    body: 'Your trial is underway. You have 15 narrated minutes to make a few sessions of your own over the next 10 days.\n\nYour trial ends on {{trial_end}}. No card is needed, and you won’t be charged automatically.\n{{app_url}}',
     variables: ['trial_end', 'app_url'],
   },
   reminder: {
     label: 'Trial ending soon', when: 'Scheduled two days before the trial ends',
     subject: 'Your Stillness trial ends soon',
-    body: 'Your trial ends on {{trial_end}}. You have {{minutes_left}} of narrated time left. Access to your saved sessions pauses when the trial ends.\n\nOpen Stillness\n{{app_url}}',
+    body: 'If you’d like another quiet moment this week, you have {{minutes_left}} of narrated time left. Your trial ends on {{trial_end}}, and access to your saved sessions pauses then.\n{{app_url}}',
     variables: ['trial_end', 'minutes_left', 'app_url'],
   },
   ended: {
@@ -67,7 +69,7 @@ export function listEmailTemplates(overrides) {
   });
 }
 
-export function renderEmailTemplate(job, config) {
+export function renderEmailTemplate(job, config, footer) {
   const kind = job.kind === 'ended' && config.mode === 'beta' ? 'ended-beta' : job.kind;
   const candidate = job.template && validateEmailTemplate({ ...job.template, kind });
   const { subject, body } = candidate || templates[kind];
@@ -81,15 +83,25 @@ export function renderEmailTemplate(job, config) {
   };
   const name = job.name?.replace(/[\r\n]/g, ' ');
   const greeting = name ? 'Hi ' + name + ',' : 'Hi there,';
-  return { subject, text: greeting + '\n\n' + body.replace(placeholder, (_, key) => values[key]) + '\n\nStillness' };
+  const message = body.replace(placeholder, (_, key) => values[key]);
+  const appAction = { welcome: 'Start your free trial', started: 'Start a session' }[kind] || 'Open Stillness';
+  const unsubscribe = footer ? '\n\nUnsubscribe from Stillness offers\n' +
+    [footer.unsubscribeUrl, footer.postalAddress].filter(Boolean).join('\n') : '';
+  return {
+    subject,
+    text: greeting + '\n\n' + message + '\n\nStillness' + unsubscribe,
+    html: brandedEmail({
+      subject, greeting, origin: config.origin, body: message, footer,
+      actions: { [values.app_url]: appAction, [values.profile_url]: 'View membership' },
+    }),
+  };
 }
 
 export function previewEmailTemplate(template, origin) {
   const beta = template.kind === 'ended-beta';
-  const preview = renderEmailTemplate({
+  return renderEmailTemplate({
     kind: beta ? 'ended' : template.kind, name: 'Taylor', trial_ends_at: '2026-12-02T09:00:00Z',
     remaining_seconds: 410, template,
-  }, { origin, mode: beta ? 'beta' : 'launch' });
-  if (template.kind === 'offer') preview.text += '\n\n[Unsubscribe link and business mailing address]';
-  return preview;
+  }, { origin, mode: beta ? 'beta' : 'launch' },
+    template.kind === 'offer' ? { postalAddress: '[Business mailing address]' } : undefined);
 }

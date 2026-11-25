@@ -55,13 +55,14 @@ export function tokenMember(token, secret) {
 }
 
 export function emailMessage(job, config) {
-  const url = config.origin + '/';
+  const unsubscribe = job.kind === 'offer'
+    ? config.origin + '/api/trial-email?token=' + emailToken(job.user_id, config.secret) : '';
   const message = {
-    from: config.from, to: [job.email], reply_to: config.replyTo, ...renderEmailTemplate(job, config),
+    from: config.from, to: [job.email], reply_to: config.replyTo,
+    ...renderEmailTemplate(job, config,
+      unsubscribe ? { unsubscribeUrl: unsubscribe, postalAddress: config.postalAddress } : undefined),
   };
-  if (job.kind === 'offer') {
-    const unsubscribe = url + 'api/trial-email?token=' + emailToken(job.user_id, config.secret);
-    message.text += '\n\nUnsubscribe from Stillness offers\n' + unsubscribe + '\n\n' + config.postalAddress;
+  if (unsubscribe) {
     message.headers = { 'List-Unsubscribe': '<' + unsubscribe + '>', 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' };
   }
   return message;

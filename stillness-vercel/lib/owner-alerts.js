@@ -1,7 +1,19 @@
 import { waitUntil } from '@vercel/functions';
 import * as memberStore from './member-store.js';
 
-const billingUrl = 'https://aistudio.google.com/billing';
+import { brandedEmail } from './branded-email.js';
+
+export function geminiBillingUrl(env = process.env) {
+  try {
+    const url = new URL(env.STILLNESS_GEMINI_BILLING_URL || '');
+    if (url.origin === 'https://aistudio.google.com' && !url.username && !url.password &&
+        /^(?:\/u\/\d+)?\/billing\/?$/.test(url.pathname) &&
+        /^[A-Z0-9]{6}(?:-[A-Z0-9]{6}){2}$/.test(url.searchParams.get('billing') || '')) {
+      return url.origin + url.pathname + '?billing=' + url.searchParams.get('billing');
+    }
+  } catch {}
+  return 'https://aistudio.google.com/projects';
+}
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
 export function ownerAlertConfig(env = process.env) {
@@ -48,7 +60,8 @@ export async function notifyGeminiDepleted({ config = ownerAlertConfig(), store 
 }
 
 function message(job, config) {
-  const admin = config.origin + '/';
+  const admin = config.origin + '/?app=1';
+  const billingUrl = config.billingUrl || geminiBillingUrl();
   const subject = {
     trial: 'Stillness · A free trial started',
     credit: 'Stillness · Add Gemini credits soon',
@@ -68,7 +81,13 @@ function message(job, config) {
       billingUrl + '\n' + admin,
     test: 'Stillness can send trial and Gemini credit alerts to this address.\n\n' + admin,
   }[job.kind];
-  return { from: 'Stillness <onboarding@resend.dev>', to: [config.to], subject, text };
+  return {
+    from: 'Stillness <onboarding@resend.dev>', to: [config.to], subject, text,
+    html: brandedEmail({
+      subject, origin: config.origin, body: text,
+      actions: { [billingUrl]: 'View Gemini credit balance', [admin]: 'Open Stillness' },
+    }),
+  };
 }
 
 export async function deliverOwnerAlerts({ config, id = null, store = memberStore, request = fetch }) {
